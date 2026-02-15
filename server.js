@@ -5,13 +5,16 @@ const cors = require('cors');
 const os = require('os');
 
 const app = express();
-const port = process.env.LISTEN_PORT || 3124;
+const port = 3124; // Hardcoded bridge port
+
+// Using your exact provided connection string
+const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: dbConnectionString,
 });
 
-app.use(cors());
+app.use(cors()); // Critical for "just working" without proxies
 app.use(express.json());
 
 pool.on('error', (err) => {
@@ -27,7 +30,6 @@ async function tableExists(name) {
   }
 }
 
-// Get local IP addresses for diagnostics
 function getIPs() {
   const interfaces = os.networkInterfaces();
   const addresses = [];
@@ -42,7 +44,6 @@ function getIPs() {
   return addresses;
 }
 
-// Comprehensive Health Endpoint for Diagnostic UI
 app.get('/health', async (req, res) => {
   const status = {
     api: 'ONLINE',
@@ -61,10 +62,10 @@ app.get('/health', async (req, res) => {
       memory_usage: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
     },
     db_config: {
-      host: pool.options.host || 'localhost',
-      port: pool.options.port || 5432,
-      database: pool.options.database || 'unknown',
-      user: pool.options.user || 'postgres'
+      host: 'localhost',
+      port: 5455,
+      database: 'convert-invert',
+      user: 'postgres'
     },
     error: null
   };
@@ -79,7 +80,7 @@ app.get('/health', async (req, res) => {
       status.tables.rejected_track = await tableExists('rejected_track');
     }
   } catch (err) {
-    status.error = err.message;
+    status.error = `DB Connection Failed: ${err.message}. Ensure Postgres is up on 5455.`;
   }
 
   res.json(status);
@@ -87,86 +88,73 @@ app.get('/health', async (req, res) => {
 
 app.get('/stats', async (req, res) => {
   try {
-    const hasSearchItems = await tableExists('search_items');
-    if (!hasSearchItems) {
-      return res.json({
-        totalTracks: 0, pending: 0, downloading: 0, completed: 0,
-        globalProgress: 0, remainingTime: "Schema Missing"
-      });
-    }
-
-    const statsQuery = `
-      SELECT 
-          (SELECT COUNT(*) FROM search_items) as total_tracks,
-          (SELECT COUNT(*) FROM downloaded_file) as completed,
-          (SELECT COUNT(*) FROM rejected_track) as failed,
-          (SELECT COUNT(*) FROM search_items si 
-           LEFT JOIN downloaded_file df ON df.track_id = si.id
-           WHERE df.id IS NULL) as pending
-    `;
-    const result = await pool.query(statsQuery);
-    const row = result.rows[0];
+    const total = await pool.query('SELECT COUNT(*) FROM search_items');
+    const completed = await pool.query('SELECT COUNT(*) FROM downloaded_file');
+    const rejected = await pool.query('SELECT COUNT(*) FROM rejected_track');
     
-    const total = parseInt(row.total_tracks) || 0;
-    const completed = parseInt(row.completed) || 0;
-    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-
+    const totalCount = parseInt(total.rows[0].count);
+    const completedCount = parseInt(completed.rows[0].count);
+    
     res.json({
-      totalTracks: total,
-      pending: parseInt(row.pending) || 0,
-      downloading: 0, 
-      completed: completed,
-      globalProgress: progress,
-      remainingTime: "Live Sync"
+      totalTracks: totalCount,
+      pending: totalCount - completedCount,
+      downloading: 0, // Placeholder as SQL schema doesn't have live speed
+      completed: completedCount,
+      globalProgress: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
+      remainingTime: "Calculating..."
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.get('/network', (req, res) => {
-  res.json({
-    status: 'CONNECTED',
-    user: process.env.USER_NAME || 'SoulseekUser',
-    latency: '22ms',
-    node: 'Postgres Bridge',
-    totalBandwidth: '0.0 MB/s'
-  });
-});
-
-app.get('/playlists', (req, res) => {
-  res.json([{ id: 'all', name: 'Master Library' }]);
+app.get('/playlists', async (req, res) => {
+  // Return a virtual "Master Sync" playlist based on search_items
+  res.json([{
+    id: 'all',
+    name: 'Direct Local Sync',
+    trackCount: 0,
+    totalSize: 'Calculating...',
+    quality: 'High Fidelity',
+    lastSynced: 'Live',
+    coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
+    tracks: []
+  }]);
 });
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    const hasSearchItems = await tableExists('search_items');
-    if (!hasSearchItems) return res.json({ id: 'all', tracks: [] });
-
-    const tracksQuery = `
+    const tracks = await pool.query(`
       SELECT 
-          si.id, si.track as title, si.artist, si.album,
-          CASE 
-              WHEN df.id IS NOT NULL THEN 'COMPLETED'
-              WHEN rt.id IS NOT NULL THEN 'FAILED'
-              WHEN js.id IS NOT NULL THEN 'FILTERING'
-              ELSE 'SEARCHING'
-          END as status,
-          dlf.filename, dlf.username as provider
+        si.id, si.track as title, si.artist, si.album,
+        CASE 
+          WHEN df.id IS NOT NULL THEN 'COMPLETED'
+          WHEN rt.id IS NOT NULL THEN 'FAILED'
+          ELSE 'SEARCHING'
+        END as status
       FROM search_items si
       LEFT JOIN judge_submissions js ON js.track = si.id
       LEFT JOIN downloadable_files dlf ON dlf.id = js.query
       LEFT JOIN downloaded_file df ON df.filename = dlf.filename
       LEFT JOIN rejected_track rt ON rt.track = js.id
-      ORDER BY si.id DESC LIMIT 100;
-    `;
-    const result = await pool.query(tracksQuery);
+      LIMIT 100
+    `);
+
     res.json({
-      id: 'all', name: 'Master Library', trackCount: result.rowCount,
-      quality: 'FLAC / 320k', lastSynced: new Date().toLocaleTimeString(),
-      coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80',
-      tracks: result.rows.map(row => ({
-        ...row, username: row.provider, progress: row.status === 'COMPLETED' ? 100 : 0
+      id: 'all',
+      name: 'Direct Local Sync',
+      trackCount: tracks.rowCount,
+      totalSize: '---',
+      quality: 'High Fidelity',
+      lastSynced: 'Just Now',
+      coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
+      tracks: tracks.rows.map(r => ({
+        id: r.id,
+        title: r.title,
+        artist: r.artist,
+        album: r.album,
+        status: r.status,
+        progress: r.status === 'COMPLETED' ? 100 : 0
       }))
     });
   } catch (err) {
@@ -174,6 +162,17 @@ app.get('/playlists/:id', async (req, res) => {
   }
 });
 
+app.get('/network', async (req, res) => {
+  res.json({
+    status: 'CONNECTED',
+    user: 'local_admin',
+    latency: '5ms',
+    node: 'soulseek_local',
+    totalBandwidth: '0.0 MB/s'
+  });
+});
+
 app.listen(port, () => {
-  console.log(`Diagnostic Bridge active on port ${port}`);
+  console.log(`SyncDash Bridge live at http://localhost:${port}`);
+  console.log(`Connecting to: ${dbConnectionString}`);
 });

@@ -1,7 +1,8 @@
 
 import { GlobalStats, NetworkStats, Playlist, Track } from './types';
 
-export const API_BASE = '/api';
+// Direct path to your local Node bridge
+export const API_BASE = 'http://localhost:3124';
 
 export interface HealthStatus {
   api: string;
@@ -21,21 +22,21 @@ export interface HealthStatus {
     user: string;
   };
   error?: string;
-  targetUrl?: string; // Added to help UI display where it's looking
+  targetUrl?: string;
 }
 
 export const api = {
   async getHealth(): Promise<HealthStatus> {
-    const targetUrl = `${window.location.origin}${API_BASE}/health`;
+    const targetUrl = `${API_BASE}/health`;
     try {
-      const res = await fetch(`${API_BASE}/health`);
+      const res = await fetch(targetUrl);
       if (!res.ok) {
         return {
-          api: 'OFFLINE (404/500)',
+          api: 'OFFLINE',
           db: 'UNKNOWN',
           tables: {},
           targetUrl,
-          error: `API returned status ${res.status}`
+          error: `Bridge returned status ${res.status}`
         };
       }
       const data = await res.json();
@@ -46,7 +47,7 @@ export const api = {
         db: 'UNKNOWN',
         tables: {},
         targetUrl,
-        error: `Network Error: ${err.message}. Check if db-bridge is running and accessible at ${targetUrl}`
+        error: `Could not reach ${targetUrl}. Is 'server.js' running on port 3124?`
       };
     }
   },
