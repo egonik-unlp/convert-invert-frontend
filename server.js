@@ -2,6 +2,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const os = require('os');
 
 const app = express();
 const port = process.env.LISTEN_PORT || 3124;
@@ -26,6 +27,21 @@ async function tableExists(name) {
   }
 }
 
+// Get local IP addresses for diagnostics
+function getIPs() {
+  const interfaces = os.networkInterfaces();
+  const addresses = [];
+  for (const k in interfaces) {
+    for (const k2 in interfaces[k]) {
+      const address = interfaces[k][k2];
+      if (address.family === 'IPv4' && !address.internal) {
+        addresses.push(address.address);
+      }
+    }
+  }
+  return addresses;
+}
+
 // Comprehensive Health Endpoint for Diagnostic UI
 app.get('/health', async (req, res) => {
   const status = {
@@ -36,6 +52,19 @@ app.get('/health', async (req, res) => {
       judge_submissions: false,
       downloaded_file: false,
       rejected_track: false
+    },
+    env: {
+      node_version: process.version,
+      platform: `${os.platform()} ${os.release()}`,
+      uptime: Math.floor(process.uptime()),
+      server_ips: getIPs(),
+      memory_usage: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`
+    },
+    db_config: {
+      host: pool.options.host || 'localhost',
+      port: pool.options.port || 5432,
+      database: pool.options.database || 'unknown',
+      user: pool.options.user || 'postgres'
     },
     error: null
   };

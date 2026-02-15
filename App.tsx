@@ -26,32 +26,28 @@ const App: React.FC = () => {
 
   const checkHealthAndLoad = async () => {
     try {
-      // 1. Diagnostics Phase
       const h = await api.getHealth();
       setHealth(h);
       
-      if (h.db !== 'CONNECTED' || Object.values(h.tables).some(v => v === false)) {
-        // Keep in diagnostic mode if DB is broken or schema missing
-        return;
+      if (h.db === 'CONNECTED' && !Object.values(h.tables).some(v => v === false)) {
+        const [s, n, p] = await Promise.all([
+          api.getStats(),
+          api.getNetwork(),
+          api.getPlaylists()
+        ]);
+        
+        setStats(s);
+        setNetwork(n);
+        
+        if (p && p.length > 0) {
+          const detailed = await api.getPlaylist(p[0].id);
+          setActivePlaylist(detailed);
+        }
+        
+        setError(null);
+        // Add a tiny delay to show the "Success" state on boot screen
+        setTimeout(() => setIsBooting(false), 1000);
       }
-
-      // 2. Data Loading Phase
-      const [s, n, p] = await Promise.all([
-        api.getStats(),
-        api.getNetwork(),
-        api.getPlaylists()
-      ]);
-      
-      setStats(s);
-      setNetwork(n);
-      
-      if (p && p.length > 0) {
-        const detailed = await api.getPlaylist(p[0].id);
-        setActivePlaylist(detailed);
-      }
-      
-      setError(null);
-      setIsBooting(false); // Transition to Dashboard
     } catch (err: any) {
       console.error("SyncDash Diagnostic Error:", err);
       setError(err.message || "Fatal error connecting to DB Bridge.");
@@ -87,83 +83,128 @@ const App: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  // --- DIAGNOSTIC RENDER ---
   if (isBooting) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background-dark flex-col p-8 text-left font-mono">
-        <div className="max-w-2xl w-full bg-surface/20 border border-primary/20 rounded-2xl p-8 shadow-2xl backdrop-blur-xl">
-          <div className="flex items-center gap-4 mb-10 border-b border-primary/10 pb-6">
-            <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center text-primary border border-primary/30">
-              <span className="material-icons animate-spin">settings</span>
+      <div className="flex h-screen items-center justify-center bg-background-dark flex-col p-8 text-left font-mono overflow-y-auto">
+        <div className="max-w-4xl w-full bg-surface/20 border border-primary/20 rounded-2xl p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+          {/* Scanline Effect */}
+          <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(19,236,91,0.05)_50%,transparent_50%)] bg-[length:100%_4px] opacity-20"></div>
+
+          <div className="flex items-center gap-6 mb-10 border-b border-primary/10 pb-6 relative z-10">
+            <div className="w-16 h-16 bg-primary/20 rounded-xl flex items-center justify-center text-primary border border-primary/30 shadow-[0_0_20px_rgba(19,236,91,0.2)]">
+              <span className="material-icons text-3xl animate-spin">settings</span>
             </div>
             <div>
-              <h1 className="text-xl font-black text-primary tracking-tighter uppercase">SyncDash System Boot</h1>
-              <p className="text-xs text-slate-500">Checking internal database bridges...</p>
+              <h1 className="text-2xl font-black text-primary tracking-tighter uppercase leading-none mb-2">SyncDash Initialization</h1>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Diagnostic Engine v1.1.0-Production</p>
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400 text-sm">1. API Bridge Reachability</span>
-              <span className={`text-xs font-bold px-3 py-1 rounded-full ${health?.api === 'ONLINE' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500 animate-pulse'}`}>
-                {health?.api || 'CONNECTING...'}
-              </span>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+            {/* Core Services */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3">Infrastructure Status</h3>
+              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-xs">REST API Bridge</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${health?.api === 'ONLINE' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500 animate-pulse'}`}>
+                    {health?.api || 'PROBING...'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400 text-xs">PostgreSQL Link</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${health?.db === 'CONNECTED' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500'}`}>
+                    {health?.db || 'WAITING...'}
+                  </span>
+                </div>
+              </div>
 
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400 text-sm">2. PostgreSQL Connection</span>
-              <span className={`text-xs font-bold px-3 py-1 rounded-full ${health?.db === 'CONNECTED' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500'}`}>
-                {health?.db || 'WAITING...'}
-              </span>
-            </div>
-
-            <div className="border-t border-white/5 pt-6 mt-6">
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-4 font-bold">Schema Verification</p>
-              <div className="grid grid-cols-2 gap-4">
-                {health?.tables && Object.entries(health.tables).map(([table, exists]) => (
-                  <div key={table} className="flex items-center gap-3">
-                    <span className={`material-icons text-sm ${exists ? 'text-primary' : 'text-slate-700'}`}>
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 pt-2">Schema Verification</h3>
+              <div className="grid grid-cols-2 gap-2 bg-background-dark/40 p-4 rounded-xl border border-white/5">
+                {health?.tables ? Object.entries(health.tables).map(([table, exists]) => (
+                  <div key={table} className="flex items-center gap-2">
+                    <span className={`material-icons text-[14px] ${exists ? 'text-primary' : 'text-slate-700'}`}>
                       {exists ? 'check_circle' : 'radio_button_unchecked'}
                     </span>
-                    <span className={`text-xs ${exists ? 'text-slate-200' : 'text-slate-600'}`}>{table}</span>
+                    <span className={`text-[10px] ${exists ? 'text-slate-200' : 'text-slate-600'}`}>{table}</span>
                   </div>
-                ))}
-                {!health && <p className="text-xs text-slate-700">Awaiting schema validation...</p>}
+                )) : <p className="text-[10px] text-slate-700 col-span-2">Awaiting sequence...</p>}
               </div>
             </div>
 
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mt-6">
-                <div className="flex items-center gap-2 text-red-500 mb-2">
-                  <span className="material-icons text-sm">warning</span>
-                  <span className="text-xs font-bold">BOOT_FAILURE_LOG</span>
+            {/* Environmental Details */}
+            <div className="space-y-4">
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3">System Environment</h3>
+              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 text-[10px] font-mono space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">OS Platform:</span>
+                  <span className="text-slate-300">{health?.env?.platform || '--'}</span>
                 </div>
-                <code className="text-[10px] text-red-400 block break-all leading-relaxed">
-                  {error}
-                </code>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Node Runtime:</span>
+                  <span className="text-slate-300">{health?.env?.node_version || '--'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Server Uptime:</span>
+                  <span className="text-primary">{health?.env?.uptime ? `${health.env.uptime}s` : '--'}</span>
+                </div>
+                <div className="flex justify-between border-t border-white/5 pt-2 mt-2">
+                  <span className="text-slate-500">Server IPs:</span>
+                  <span className="text-slate-300 text-right">{health?.env?.server_ips?.join(', ') || 'Discovering...'}</span>
+                </div>
               </div>
-            )}
+
+              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 pt-2">Database Metadata</h3>
+              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 text-[10px] font-mono space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">DB Host:</span>
+                  <span className="text-slate-300">{health?.db_config?.host}:{health?.db_config?.port || '--'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Catalog:</span>
+                  <span className="text-slate-300">{health?.db_config?.database || '--'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-500">DB User:</span>
+                  <span className="text-slate-300">{health?.db_config?.user || '--'}</span>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-10 flex gap-4">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mt-8 relative z-10">
+              <div className="flex items-center gap-2 text-red-500 mb-2">
+                <span className="material-icons text-sm">terminal</span>
+                <span className="text-[10px] font-bold uppercase">Kernel Panic Output</span>
+              </div>
+              <code className="text-[10px] text-red-400 block break-all leading-relaxed bg-black/20 p-2 rounded">
+                {error}
+              </code>
+            </div>
+          )}
+
+          <div className="mt-10 flex gap-4 relative z-10">
             <button 
               onClick={() => checkHealthAndLoad()}
-              className="flex-1 bg-primary text-background-dark font-black py-4 rounded-xl text-xs uppercase tracking-widest hover:scale-[1.02] active:scale-[0.98] transition-all"
+              className="flex-1 bg-primary text-background-dark font-black py-4 rounded-xl text-xs uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(19,236,91,0.2)]"
             >
-              Forced Re-Sync
+              Forced Kernel Refresh
             </button>
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 border border-primary/20 text-primary rounded-xl hover:bg-primary/5"
+              className="px-6 border border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors"
             >
               <span className="material-icons">refresh</span>
             </button>
           </div>
         </div>
 
-        <p className="mt-8 text-[10px] text-slate-700 uppercase tracking-[0.3em]">
-          SyncDash Diagnostic Engine v1.0.4-Stable
-        </p>
+        <div className="mt-8 flex items-center gap-4 text-[10px] text-slate-700 uppercase tracking-[0.4em] font-bold">
+          <span>Bootloader v0.98</span>
+          <span className="w-1 h-1 bg-slate-800 rounded-full"></span>
+          <span>Core-Sync Stable</span>
+        </div>
       </div>
     );
   }

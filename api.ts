@@ -7,6 +7,19 @@ export interface HealthStatus {
   api: string;
   db: string;
   tables: Record<string, boolean>;
+  env?: {
+    node_version: string;
+    platform: string;
+    uptime: number;
+    server_ips: string[];
+    memory_usage: string;
+  };
+  db_config?: {
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+  };
   error?: string;
 }
 
