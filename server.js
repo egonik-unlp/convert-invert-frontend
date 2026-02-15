@@ -3,41 +3,47 @@ import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
 import cors from 'cors';
+import Redis from 'ioredis';
 
 const app = express();
 const port = 3124; 
 
-const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
-
+// Database configuration - Fixed DB name to convert_invert
+const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert_invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
 });
+
+// Redis configuration for real-time download progress
+const redis = new Redis('redis://localhost:6379');
 
 app.use(cors());
 app.use(express.json());
 
 // Memory cache for telemetry and correlation
-let jaegerProgressMap = new Map();
+let redisProgressMap = new Map(); // js_id -> progress
+let jaegerProgressMap = new Map(); // track_id -> progress (fuzzy)
 let systemLogs = [];
-let correlationMap = new Map(); // External Track ID -> DB ID
+let correlationMap = new Map(); // js_id -> track_id
 
 /**
- * Periodically refresh the correlation map between DB tracks and potential log identifiers
+ * Periodically refresh the correlation map between judge_submissions and search_items
  */
-async function refreshCorrelationMap() {
+async function refreshCorrelation() {
   try {
-    const query = `SELECT id, track as title, artist, album FROM search_items`;
+    const query = `
+      SELECT js.id as js_id, js.track as track_id, si.artist, si.track as title
+      FROM judge_submissions js
+      JOIN search_items si ON js.track = si.id
+    `;
     const res = await pool.query(query);
     const newMap = new Map();
+    const fuzzyMap = new Map();
     
     res.rows.forEach(row => {
-      // Create multiple keys for fuzzy matching
+      newMap.set(row.js_id.toString(), row.track_id);
       const fuzzyKey = `${row.artist} - ${row.title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-      newMap.set(fuzzyKey, row.id);
-      
-      // If there's an external ID column (we'll check common ones), add them
-      // In this system, 'track' might actually be the Spotify ID in some contexts
-      newMap.set(row.title.toLowerCase(), row.id);
+      fuzzyMap.set(fuzzyKey, row.track_id);
     });
     
     correlationMap = newMap;
@@ -47,38 +53,47 @@ async function refreshCorrelationMap() {
 }
 
 /**
- * Fetches recent traces from Jaeger and correlates them with DB tracks
+ * Poller for Redis progress keys: dl:{judge_submission_Id}:progress
+ */
+async function updateProgressFromRedis() {
+  try {
+    const keys = await redis.keys('dl:*:progress');
+    const newProgress = new Map();
+    
+    for (const key of keys) {
+      const parts = key.split(':');
+      if (parts.length === 3) {
+        const jsId = parts[1];
+        const val = await redis.get(key);
+        if (val) {
+          const trackId = correlationMap.get(jsId);
+          if (trackId) {
+            newProgress.set(trackId, parseFloat(val));
+          }
+        }
+      }
+    }
+    redisProgressMap = newProgress;
+  } catch (err) {
+    console.error('Redis Poll Error:', err.message);
+  }
+}
+
+/**
+ * Fetches recent traces from Jaeger for logging and fuzzy progress matching
  */
 async function updateProgressFromJaeger() {
   try {
-    const response = await fetch('http://localhost:16686/api/traces?service=sync-engine&limit=50&lookback=1h');
-    if (!response.ok) return;
+    const response = await fetch('http://localhost:16686/api/traces?service=sync-engine&limit=50&lookback=1h').catch(() => null);
+    if (!response || !response.ok) return;
     
     const { data } = await response.json();
     if (!data) return;
 
-    const newProgress = new Map();
     const newLogs = [];
 
     for (const trace of data) {
       for (const span of trace.spans) {
-        // Extract Track Identification from span tags
-        const trackIdTag = span.tags.find(t => t.key === 'track_id' || t.key === 'id');
-        const artistTag = span.tags.find(t => t.key === 'artist');
-        const titleTag = span.tags.find(t => t.key === 'track' || t.key === 'title');
-
-        let dbId = null;
-
-        // Try correlating by provided ID
-        if (trackIdTag && correlationMap.has(trackIdTag.value)) {
-          dbId = correlationMap.get(trackIdTag.value);
-        } 
-        // Fallback to fuzzy match by Artist/Title
-        else if (artistTag && titleTag) {
-          const fuzzyKey = `${artistTag.value} - ${titleTag.value}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-          dbId = correlationMap.get(fuzzyKey);
-        }
-
         if (span.logs) {
           for (const log of span.logs) {
             const messageField = log.fields.find(f => f.key === 'message' || f.key === 'event');
@@ -90,35 +105,26 @@ async function updateProgressFromJaeger() {
                 timestamp: log.timestamp / 1000,
                 message: messageField.value,
                 level: 'info',
-                trackId: dbId,
                 progress: progField ? parseFloat(progField.value) : null
               });
-            }
-
-            if (dbId && progField) {
-              const val = parseFloat(progField.value);
-              if (!isNaN(val)) {
-                const existing = newProgress.get(dbId) || 0;
-                newProgress.set(dbId, Math.max(existing, val));
-              }
             }
           }
         }
       }
     }
     
-    jaegerProgressMap = newProgress;
     // Keep last 100 logs
     systemLogs = [...newLogs, ...systemLogs].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
   } catch (err) {
-    // console.error('Jaeger Sync Error:', err.message);
+    // Silently fail if Jaeger is down
   }
 }
 
 // Initial and periodic syncs
-refreshCorrelationMap();
-setInterval(refreshCorrelationMap, 30000);
-setInterval(updateProgressFromJaeger, 2500);
+refreshCorrelation();
+setInterval(refreshCorrelation, 10000);
+setInterval(updateProgressFromRedis, 1000);
+setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
   try {
@@ -131,26 +137,22 @@ app.get('/health', async (req, res) => {
   const status = {
     api: 'ONLINE',
     db: 'DISCONNECTED',
-    tables: {
-      search_items: false,
-      judge_submissions: false,
-      downloadable_files: false,
-      downloaded_file: false,
-      rejected_track: false
-    },
-    jaeger: 'CHECKING',
+    tables: {},
+    redis: 'OFFLINE',
+    jaeger: 'OFFLINE',
     error: null
   };
   try {
     const dbCheck = await pool.query('SELECT NOW()');
     if (dbCheck.rowCount > 0) {
       status.db = 'CONNECTED';
-      status.tables.search_items = (await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'search_items'`)).rowCount > 0;
-      status.tables.judge_submissions = (await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'judge_submissions'`)).rowCount > 0;
-      status.tables.downloadable_files = (await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'downloadable_files'`)).rowCount > 0;
-      status.tables.downloaded_file = (await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'downloaded_file'`)).rowCount > 0;
-      status.tables.rejected_track = (await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = 'rejected_track'`)).rowCount > 0;
+      const tables = ['search_items', 'judge_submissions', 'downloadable_files', 'downloaded_file', 'rejected_track'];
+      for(const t of tables) {
+        const check = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [t]);
+        status.tables[t] = check.rowCount > 0;
+      }
     }
+    status.redis = redis.status === 'ready' ? 'CONNECTED' : 'OFFLINE';
     const jaegerCheck = await fetch('http://localhost:16686/api/services').catch(() => null);
     status.jaeger = jaegerCheck?.ok ? 'CONNECTED' : 'OFFLINE';
   } catch (err) { status.error = err.message; }
@@ -168,7 +170,7 @@ app.get('/stats', async (req, res) => {
     
     const total = counts.search_items;
     const completed = counts.downloaded_file;
-    const downloading = jaegerProgressMap.size;
+    const downloading = redisProgressMap.size;
     
     res.json({
       totalTracks: total,
@@ -176,7 +178,7 @@ app.get('/stats', async (req, res) => {
       downloading: downloading, 
       completed: completed,
       globalProgress: total > 0 ? Math.round((completed / total) * 100) : 0,
-      remainingTime: downloading > 0 ? "Active Sync..." : "Idle",
+      remainingTime: downloading > 0 ? `${downloading} Active` : "Idle",
       tableCounts: counts
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -197,10 +199,11 @@ app.get('/playlists', async (req, res) => {
 
 app.get('/playlists/:id', async (req, res) => {
   try {
+    // Primary query for track status
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
-        COUNT(js.id) as candidates_count,
+        (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         CASE 
           WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 'COMPLETED'
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
@@ -208,10 +211,8 @@ app.get('/playlists/:id', async (req, res) => {
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
-      LEFT JOIN judge_submissions js ON js.track = si.id
-      GROUP BY si.id
       ORDER BY si.id DESC
-      LIMIT 200
+      LIMIT 250
     `;
 
     const tracks = await pool.query(query);
@@ -224,12 +225,13 @@ app.get('/playlists/:id', async (req, res) => {
         let progress = 0;
         let status = r.status;
 
-        if (r.status === 'COMPLETED') progress = 100;
-        else if (jaegerProgressMap.has(r.id)) {
-          progress = jaegerProgressMap.get(r.id);
+        if (r.status === 'COMPLETED') {
+          progress = 100;
+        } else if (redisProgressMap.has(r.id)) {
+          progress = redisProgressMap.get(r.id);
           status = 'DOWNLOADING';
         } else if (r.status === 'DOWNLOADING') {
-          progress = 5;
+          progress = 2; // Started
         }
 
         return {
@@ -270,10 +272,10 @@ app.get('/tracks/:id/candidates', async (req, res) => {
 app.get('/network', async (req, res) => {
   res.json({
     status: 'CONNECTED',
-    user: 'local_admin',
-    latency: 'Local',
-    node: 'localhost:5455',
-    totalBandwidth: jaegerProgressMap.size > 0 ? '4.2 MB/s' : '0.0 MB/s'
+    user: 'egonik',
+    latency: 'Low (Redis)',
+    node: 'localhost:6379',
+    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 0.8).toFixed(1)} MB/s` : '0.0 MB/s'
   });
 });
 

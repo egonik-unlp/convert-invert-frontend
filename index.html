@@ -47,7 +47,6 @@
     .active-glow {
       box-shadow: 0 0 20px rgba(19, 236, 91, 0.1);
     }
-    /* Ensure the root takes full height to prevent black/green gaps */
     #root {
       height: 100vh;
       width: 100vw;
@@ -64,14 +63,14 @@
     "cors": "https://esm.sh/cors@^2.8.6",
     "os": "https://esm.sh/os@^0.1.2",
     "express": "https://esm.sh/express@^5.2.1",
-    "pg": "https://esm.sh/pg@^8.18.0"
+    "pg": "https://esm.sh/pg@^8.18.0",
+    "ioredis": "https://esm.sh/ioredis@^5.5.0"
   }
 }
 </script>
 </head>
 <body>
   <div id="root"></div>
-  <!-- Entry point for the application -->
   <script type="module" src="./index.tsx"></script>
 </body>
 </html>
