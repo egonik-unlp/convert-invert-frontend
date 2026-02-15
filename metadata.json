@@ -1,0 +1,8 @@
+{
+  "name": "SyncDash - Music Synchronization Dashboard",
+  "description": "A high-fidelity dashboard for managing Spotify-to-Soulseek track synchronization, featuring real-time progress tracking, metadata similarity analysis, and network status monitoring.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
