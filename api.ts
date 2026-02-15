@@ -72,7 +72,10 @@ export const api = {
 
   async getPlaylist(id: string): Promise<Playlist> {
     const res = await fetch(`${API_BASE}/playlists/${id}`);
-    if (!res.ok) throw new Error("Track query failed");
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || "Track query failed");
+    }
     return res.json();
   },
 

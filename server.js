@@ -51,6 +51,7 @@ app.get('/health', async (req, res) => {
     tables: {
       search_items: false,
       judge_submissions: false,
+      downloadable_files: false,
       downloaded_file: false,
       rejected_track: false
     },
@@ -76,6 +77,7 @@ app.get('/health', async (req, res) => {
       status.db = 'CONNECTED';
       status.tables.search_items = await tableExists('search_items');
       status.tables.judge_submissions = await tableExists('judge_submissions');
+      status.tables.downloadable_files = await tableExists('downloadable_files');
       status.tables.downloaded_file = await tableExists('downloaded_file');
       status.tables.rejected_track = await tableExists('rejected_track');
     }
@@ -122,7 +124,9 @@ app.get('/playlists', async (req, res) => {
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    const tracks = await pool.query(`
+    // We use a LEFT JOIN strategy. 
+    // If a table name is wrong, this block will catch it and return the specific error.
+    const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
         js.score,
@@ -141,7 +145,9 @@ app.get('/playlists/:id', async (req, res) => {
       LEFT JOIN rejected_track rt ON rt.track = si.id
       ORDER BY si.id DESC
       LIMIT 100
-    `);
+    `;
+
+    const tracks = await pool.query(query);
 
     res.json({
       id: 'all',
@@ -165,8 +171,10 @@ app.get('/playlists/:id', async (req, res) => {
       }))
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error("SQL Error in /playlists/:id:", err.message);
+    res.status(500).json({ 
+      error: `SQL Error: ${err.message}. Check if your table columns (track, artist, album) match search_items table.` 
+    });
   }
 });
 
