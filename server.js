@@ -3,7 +3,6 @@ import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
 import cors from 'cors';
-import os from 'os';
 
 const app = express();
 const port = 3124; 
@@ -63,15 +62,31 @@ app.get('/health', async (req, res) => {
 
 app.get('/stats', async (req, res) => {
   try {
-    const total = await pool.query('SELECT COUNT(*) FROM search_items');
-    const completed = await pool.query('SELECT COUNT(*) FROM downloaded_file');
+    // Advanced stats calculation
+    const query = `
+      SELECT 
+        (SELECT COUNT(*) FROM search_items) as total,
+        (SELECT COUNT(*) FROM downloaded_file) as completed,
+        (SELECT COUNT(*) FROM rejected_track) as failed,
+        (SELECT COUNT(DISTINCT track) FROM judge_submissions js 
+         WHERE NOT EXISTS (SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files WHERE id = js.query))
+         AND NOT EXISTS (SELECT 1 FROM rejected_track rt WHERE rt.track = js.track)
+        ) as downloading
+    `;
+    const result = await pool.query(query);
+    const row = result.rows[0];
+    
+    const total = parseInt(row.total);
+    const completed = parseInt(row.completed);
+    const downloading = parseInt(row.downloading);
+    
     res.json({
-      totalTracks: parseInt(total.rows[0].count),
-      pending: Math.max(0, parseInt(total.rows[0].count) - parseInt(completed.rows[0].count)),
-      downloading: 0, 
-      completed: parseInt(completed.rows[0].count),
-      globalProgress: parseInt(total.rows[0].count) > 0 ? Math.round((parseInt(completed.rows[0].count) / parseInt(total.rows[0].count)) * 100) : 0,
-      remainingTime: "Live"
+      totalTracks: total,
+      pending: Math.max(0, total - completed - downloading),
+      downloading: downloading, 
+      completed: completed,
+      globalProgress: total > 0 ? Math.round((completed / total) * 100) : 0,
+      remainingTime: "Syncing"
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -92,26 +107,24 @@ app.get('/playlists', async (req, res) => {
 app.get('/playlists/:id', async (req, res) => {
   try {
     const hasScore = await columnExists('judge_submissions', 'score');
-    const hasDownloadableFiles = await tableExists('downloadable_files');
     const scoreCol = hasScore ? 'MAX(js.score)' : 'NULL';
 
-    // Grouping by search_items.id ensures one row per track
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
         ${scoreCol} as score,
         COUNT(js.id) as candidates_count,
         CASE 
-          WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename = ANY(SELECT filename FROM downloadable_files WHERE id IN (SELECT query FROM judge_submissions WHERE track = si.id))) THEN 'COMPLETED'
+          WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 'COMPLETED'
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
-          WHEN EXISTS(SELECT 1 FROM judge_submissions js WHERE js.track = si.id) THEN 'FILTERING'
+          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 'DOWNLOADING'
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
       LEFT JOIN judge_submissions js ON js.track = si.id
       GROUP BY si.id
       ORDER BY si.id DESC
-      LIMIT 100
+      LIMIT 150
     `;
 
     const tracks = await pool.query(query);
@@ -129,7 +142,7 @@ app.get('/playlists/:id', async (req, res) => {
         status: r.status,
         score: r.score,
         candidatesCount: parseInt(r.candidates_count),
-        progress: r.status === 'COMPLETED' ? 100 : 0
+        progress: r.status === 'COMPLETED' ? 100 : (r.status === 'DOWNLOADING' ? 45 : 0)
       }))
     });
   } catch (err) {

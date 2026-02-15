@@ -7,7 +7,7 @@ import {
   NetworkStats, 
   GlobalStats 
 } from './types';
-import { api, HealthStatus, API_BASE } from './api';
+import { api, HealthStatus } from './api';
 import Sidebar from './components/Sidebar';
 import StatsHeader from './components/StatsHeader';
 import TrackRow from './components/TrackRow';
@@ -71,7 +71,8 @@ const App: React.FC = () => {
         setActivePlaylist(detailed);
       }
     } catch (e) {
-      setIsBooting(true);
+      // Don't flip to booting on single poll failure, just log
+      console.warn("Poll failed", e);
     }
   };
 
@@ -79,11 +80,10 @@ const App: React.FC = () => {
     if (!activePlaylist) return [];
     switch (currentView) {
       case 'downloads':
-        return activePlaylist.tracks.filter(t => t.status === TrackStatus.DOWNLOADING || t.status === TrackStatus.FINALIZING);
+        return activePlaylist.tracks.filter(t => t.status === TrackStatus.DOWNLOADING || t.status === TrackStatus.SEARCHING);
       case 'history':
         return activePlaylist.tracks.filter(t => t.status === TrackStatus.COMPLETED || t.status === TrackStatus.FAILED);
       case 'playlists':
-        // Show grouping by album in a real app, here we just show all but titled differently
         return activePlaylist.tracks;
       case 'dashboard':
       default:
@@ -115,7 +115,7 @@ const App: React.FC = () => {
               <code className="text-[10px] text-red-300 break-all bg-black/40 p-3 rounded block">{error}</code>
             </div>
           )}
-          <button onClick={checkHealthAndLoad} className="mt-8 w-full bg-primary text-background-dark font-black py-4 rounded-xl text-xs uppercase tracking-widest">Retry Connection</button>
+          <button onClick={checkHealthAndLoad} className="mt-8 w-full bg-primary text-background-dark font-black py-4 rounded-xl text-xs uppercase tracking-widest hover:scale-[1.02] transition-transform active:scale-95">Retry Connection</button>
         </div>
       </div>
     );
@@ -132,15 +132,23 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {stats && <StatsHeader stats={stats} />}
         
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pb-32">
           <div className="max-w-7xl mx-auto">
-            <h2 className="text-3xl font-black mb-1 capitalize">{currentView}</h2>
-            <p className="text-slate-500 font-medium mb-8">
-              {currentView === 'dashboard' ? 'Real-time overview of your music sync queue.' : 
-               currentView === 'downloads' ? 'Active download streams from Soulseek.' :
-               currentView === 'history' ? 'Completed and rejected synchronization events.' :
-               'Organized music collections.'}
-            </p>
+            <div className="flex items-end justify-between mb-8">
+              <div>
+                <h2 className="text-3xl font-black mb-1 capitalize tracking-tighter">{currentView}</h2>
+                <p className="text-slate-500 font-medium">
+                  {currentView === 'dashboard' ? 'Real-time overview of your music sync queue.' : 
+                   currentView === 'downloads' ? 'Tracks currently being located or retrieved.' :
+                   currentView === 'history' ? 'A log of all past synchronization outcomes.' :
+                   'Browse your organized music library.'}
+                </p>
+              </div>
+              <div className="px-4 py-2 bg-surface/50 border border-white/5 rounded-xl flex items-center gap-3">
+                 <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">View Total</span>
+                 <span className="text-sm font-bold text-primary font-mono">{filteredTracks.length}</span>
+              </div>
+            </div>
 
             <div className="space-y-3">
               <div className="grid grid-cols-12 px-6 text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] pb-4">
@@ -158,9 +166,9 @@ const App: React.FC = () => {
                   />
                 ))
               ) : (
-                <div className="py-20 text-center border-2 border-dashed border-white/5 rounded-3xl bg-surface/10">
-                  <span className="material-icons text-4xl text-slate-800 mb-4">analytics</span>
-                  <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">No entries found for this view</p>
+                <div className="py-24 text-center border-2 border-dashed border-white/5 rounded-3xl bg-surface/10">
+                  <span className="material-icons text-5xl text-slate-800 mb-6">analytics</span>
+                  <p className="text-slate-500 font-black uppercase tracking-[0.3em] text-xs">No entries found for this category</p>
                 </div>
               )}
             </div>
