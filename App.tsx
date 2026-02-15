@@ -61,7 +61,7 @@ const App: React.FC = () => {
     checkHealthAndLoad();
     const interval = setInterval(() => {
       if (!isBooting) loadDashboardData();
-    }, 4000);
+    }, 1500); // Polling faster for real-time progress
     return () => clearInterval(interval);
   }, [isBooting]);
 

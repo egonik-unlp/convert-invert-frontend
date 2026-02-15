@@ -8,13 +8,13 @@ import Redis from 'ioredis';
 const app = express();
 const port = 3124; 
 
-// Database configuration - Using the hyphenated name as requested
+// Database configuration
 const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
 });
 
-// Redis configuration - Connecting to the docker-exposed port
+// Redis configuration
 const redis = new Redis('redis://localhost:6379');
 
 app.use(cors());
@@ -24,10 +24,10 @@ app.use(express.json());
 let redisProgressMap = new Map(); // track_id -> progress %
 let systemLogs = [];
 let correlationMap = new Map(); // js_id -> track_id (search_items.id)
+let knownTrackIds = new Set();  // Set of all valid search_items.id
 
 /**
- * Periodically refresh the correlation map between judge_submissions and search_items
- * This allows us to map the Redis ID (submission_id) back to the UI ID (track_id)
+ * Periodically refresh the correlation map and valid track list
  */
 async function refreshCorrelation() {
   try {
@@ -38,20 +38,20 @@ async function refreshCorrelation() {
     `;
     const res = await pool.query(query);
     const newMap = new Map();
-    
     res.rows.forEach(row => {
-      newMap.set(row.js_id.toString(), row.track_id);
+      newMap.set(row.js_id.toString(), parseInt(row.track_id));
     });
-    
     correlationMap = newMap;
+
+    const tracksRes = await pool.query(`SELECT id FROM search_items`);
+    knownTrackIds = new Set(tracksRes.rows.map(r => parseInt(r.id)));
   } catch (err) {
-    console.error(`[DB] Correlation mapping failed for ${dbConnectionString}:`, err.message);
+    console.error(`[DB] Correlation failed:`, err.message);
   }
 }
 
 /**
- * Poller for Redis progress keys: dl:{judge_submission_Id}:progress
- * These keys are HASHES containing bytes_downloaded and total_bytes
+ * Poller for Redis progress keys: dl:{ID}:progress
  */
 async function updateProgressFromRedis() {
   try {
@@ -61,21 +61,26 @@ async function updateProgressFromRedis() {
     for (const key of keys) {
       const parts = key.split(':');
       if (parts.length >= 2) {
-        const jsId = parts[1];
-        const trackId = correlationMap.get(jsId);
+        const idStr = parts[1];
+        const idNum = parseInt(idStr);
         
-        // Only process if we can map this submission to a track in our DB
+        // Strategy 1: Is it a judge_submission.id?
+        let trackId = correlationMap.get(idStr);
+        
+        // Strategy 2: Is it directly the search_items.id?
+        if (!trackId && knownTrackIds.has(idNum)) {
+          trackId = idNum;
+        }
+        
         if (trackId) {
           const type = await redis.type(key);
           if (type === 'hash') {
             const data = await redis.hgetall(key);
-            
             const downloaded = parseFloat(data.bytes_downloaded);
             const total = parseFloat(data.total_bytes);
             
             if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
               const percentage = Math.round((downloaded / total) * 100);
-              // Store normalized 0-100 value
               newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
             }
           }
@@ -84,7 +89,6 @@ async function updateProgressFromRedis() {
     }
     redisProgressMap = newProgress;
   } catch (err) {
-    // Prevent logging WRONGTYPE errors repeatedly if key types shift
     if (!err.message.includes('WRONGTYPE')) {
       console.error('Redis Poll Error:', err.message);
     }
@@ -92,50 +96,41 @@ async function updateProgressFromRedis() {
 }
 
 /**
- * Fetches recent traces from Jaeger for logging
+ * Jaeger Telemetry
  */
 async function updateProgressFromJaeger() {
   try {
     const response = await fetch('http://localhost:16686/api/traces?service=sync-engine&limit=50&lookback=1h').catch(() => null);
     if (!response || !response.ok) return;
-    
     const { data } = await response.json();
     if (!data) return;
-
     const newLogs = [];
-
     for (const trace of data) {
       for (const span of trace.spans) {
         if (span.logs) {
           for (const log of span.logs) {
-            const messageField = log.fields.find(f => f.key === 'message' || f.key === 'event');
-            const progField = log.fields.find(f => f.key === 'progress' || f.key === 'percentage');
-            
-            if (messageField) {
+            const msg = log.fields.find(f => f.key === 'message' || f.key === 'event');
+            const prg = log.fields.find(f => f.key === 'progress' || f.key === 'percentage');
+            if (msg) {
               newLogs.push({
                 id: span.spanID + log.timestamp,
                 timestamp: log.timestamp / 1000,
-                message: messageField.value,
+                message: msg.value,
                 level: 'info',
-                progress: progField ? parseFloat(progField.value) : null
+                progress: prg ? parseFloat(prg.value) : null
               });
             }
           }
         }
       }
     }
-    
-    // Keep last 100 logs
     systemLogs = [...newLogs, ...systemLogs].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
-  } catch (err) {
-    // Silently fail if Jaeger is down
-  }
+  } catch (err) {}
 }
 
-// Initial and periodic syncs
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
-setInterval(updateProgressFromRedis, 1000); // High frequency for smooth UI
+setInterval(updateProgressFromRedis, 500); // Poll faster for updates
 setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
@@ -146,14 +141,7 @@ async function getCount(table) {
 }
 
 app.get('/health', async (req, res) => {
-  const status = {
-    api: 'ONLINE',
-    db: 'DISCONNECTED',
-    tables: {},
-    redis: 'OFFLINE',
-    jaeger: 'OFFLINE',
-    error: null
-  };
+  const status = { api: 'ONLINE', db: 'DISCONNECTED', tables: {}, redis: 'OFFLINE', jaeger: 'OFFLINE', error: null };
   try {
     const dbCheck = await pool.query('SELECT NOW()');
     if (dbCheck.rowCount > 0) {
@@ -182,6 +170,7 @@ app.get('/stats', async (req, res) => {
     
     const total = counts.search_items;
     const completed = counts.downloaded_file;
+    // Download count should strictly be those in the progress map
     const downloading = redisProgressMap.size;
     
     res.json({
@@ -222,7 +211,13 @@ app.get('/playlists/:id', async (req, res) => {
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
-      ORDER BY si.id DESC
+      ORDER BY 
+        (CASE 
+          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 0 
+          WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 2
+          ELSE 1 
+        END) ASC, 
+        si.id DESC
       LIMIT 250
     `;
 
@@ -236,13 +231,14 @@ app.get('/playlists/:id', async (req, res) => {
         let progress = 0;
         let status = r.status;
 
-        if (r.status === 'COMPLETED') {
-          progress = 100;
-        } else if (redisProgressMap.has(r.id)) {
-          progress = redisProgressMap.get(r.id);
+        // Force status to DOWNLOADING if it's in our Redis map
+        if (redisProgressMap.has(parseInt(r.id))) {
+          progress = redisProgressMap.get(parseInt(r.id));
           status = 'DOWNLOADING';
+        } else if (r.status === 'COMPLETED') {
+          progress = 100;
         } else if (r.status === 'DOWNLOADING') {
-          progress = 1; // Found in submissions but no Redis progress yet
+          progress = 2; // Default starting progress if in DB but not Redis yet
         }
 
         return {
@@ -261,9 +257,7 @@ app.get('/playlists/:id', async (req, res) => {
   }
 });
 
-app.get('/logs', (req, res) => {
-  res.json(systemLogs);
-});
+app.get('/logs', (req, res) => res.json(systemLogs));
 
 app.get('/tracks/:id/candidates', async (req, res) => {
   try {
@@ -275,9 +269,7 @@ app.get('/tracks/:id/candidates', async (req, res) => {
     `;
     const results = await pool.query(query, [req.params.id]);
     res.json(results.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/network', async (req, res) => {
@@ -286,11 +278,11 @@ app.get('/network', async (req, res) => {
     user: 'egonik',
     latency: 'Real-time',
     node: 'Redis Cache',
-    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 1.2).toFixed(1)} MB/s` : '0.0 MB/s'
+    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 1.5).toFixed(1)} MB/s` : '0.0 MB/s'
   });
 });
 
 app.listen(port, () => {
   console.log(`SyncDash Bridge live at http://localhost:${port}`);
-  console.log(`Connecting to database: ${dbConnectionString}`);
+  console.log(`DB: ${dbConnectionString}`);
 });
