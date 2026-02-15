@@ -2,7 +2,6 @@
 version: '3.8'
 
 services:
-  # The PostgreSQL Database
   db:
     image: postgres:15-alpine
     environment:
@@ -14,22 +13,19 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  # The Rust Backend (Engine + API)
-  backend:
+  # The Bridge: Transparent access to SQL
+  db-bridge:
     build: 
       context: .
-      dockerfile: Dockerfile.backend # You need to create this for your Rust app
+      dockerfile: Dockerfile.backend
     environment:
       DATABASE_URL: postgres://${USER_NAME:-postgres}:${USER_PASSWORD:-123456}@db:5432/convert_invert
       USER_NAME: ${USER_NAME}
-      USER_PASSWORD: ${USER_PASSWORD}
       LISTEN_PORT: 3124
     depends_on:
       - db
-    volumes:
-      - ./music:/home/gonik/Music
 
-  # The SyncDash Frontend
+  # The Dashboard: Visualizing the DB
   frontend:
     build:
       context: .
@@ -37,9 +33,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - db-bridge
     restart: always
 
 volumes:
   postgres_data:
-  music:
