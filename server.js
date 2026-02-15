@@ -1,3 +1,4 @@
+
 import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -7,7 +8,6 @@ import os from 'os';
 const app = express();
 const port = 3124; 
 
-// Your direct local connection string
 const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 
 const pool = new Pool({
@@ -125,16 +125,19 @@ app.get('/playlists/:id', async (req, res) => {
     const tracks = await pool.query(`
       SELECT 
         si.id, si.track as title, si.artist, si.album,
+        js.score,
+        dlf.username as matched_user,
+        dlf.filename as matched_filename,
         CASE 
           WHEN df.id IS NOT NULL THEN 'COMPLETED'
           WHEN rt.id IS NOT NULL THEN 'FAILED'
+          WHEN js.id IS NOT NULL THEN 'FILTERING'
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
       LEFT JOIN judge_submissions js ON js.track = si.id
-      LEFT JOIN downloaded_file df ON df.filename = (
-        SELECT filename FROM downloadable_files WHERE id = js.query LIMIT 1
-      )
+      LEFT JOIN downloadable_files dlf ON dlf.id = js.query
+      LEFT JOIN downloaded_file df ON df.filename = dlf.filename
       LEFT JOIN rejected_track rt ON rt.track = si.id
       ORDER BY si.id DESC
       LIMIT 100
@@ -155,6 +158,9 @@ app.get('/playlists/:id', async (req, res) => {
         artist: r.artist,
         album: r.album,
         status: r.status,
+        score: r.score,
+        username: r.matched_user,
+        filename: r.matched_filename,
         progress: r.status === 'COMPLETED' ? 100 : 0
       }))
     });

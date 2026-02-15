@@ -18,13 +18,13 @@ export interface Track {
   album: string;
   status: TrackStatus;
   progress: number;
+  score?: number;      // Actual similarity score (0.0 to 1.0)
   filename?: string;
   username?: string;   // Soulseek user
   fileSize?: string;
   format?: string;
   coverArt?: string;
   rejectReason?: string;
-  // Added downloadSpeed to match usage in components/TrackRow.tsx
   downloadSpeed?: string;
 }
 
