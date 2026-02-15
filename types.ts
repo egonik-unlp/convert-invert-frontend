@@ -10,6 +10,15 @@ export enum TrackStatus {
   IN_QUEUE = 'IN_QUEUE'
 }
 
+export interface Candidate {
+  id: number;
+  username: string;
+  filename: string;
+  score: number;
+  size?: string;
+  speed?: string;
+}
+
 export interface Track {
   id: string | number; // SQL ID
   track_id: number;    // Hash/Spotify ID from search_items
@@ -18,14 +27,12 @@ export interface Track {
   album: string;
   status: TrackStatus;
   progress: number;
-  score?: number;      // Actual similarity score (0.0 to 1.0)
-  filename?: string;
-  username?: string;   // Soulseek user
-  fileSize?: string;
-  format?: string;
+  score?: number;      // Best similarity score
+  candidatesCount: number;
+  username?: string;   // Best candidate provider
+  filename?: string;   // Best candidate filename
   coverArt?: string;
   rejectReason?: string;
-  downloadSpeed?: string;
 }
 
 export interface Playlist {
