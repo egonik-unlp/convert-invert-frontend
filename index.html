@@ -47,18 +47,27 @@
     .active-glow {
       box-shadow: 0 0 20px rgba(19, 236, 91, 0.1);
     }
+    /* Ensure the root takes full height to prevent black/green gaps */
+    #root {
+      height: 100vh;
+      width: 100vw;
+    }
   </style>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
     "react": "https://esm.sh/react@^19.2.4",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
+    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
 </head>
 <body>
   <div id="root"></div>
+  <!-- Entry point for the application -->
+  <script type="module" src="./index.tsx"></script>
 </body>
 </html>

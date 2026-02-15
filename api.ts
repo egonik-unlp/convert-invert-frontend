@@ -12,9 +12,25 @@ export interface HealthStatus {
 
 export const api = {
   async getHealth(): Promise<HealthStatus> {
-    const res = await fetch(`${API_BASE}/health`);
-    if (!res.ok) throw new Error("API Bridge Offline");
-    return res.json();
+    try {
+      const res = await fetch(`${API_BASE}/health`);
+      if (!res.ok) {
+        return {
+          api: 'OFFLINE (404/500)',
+          db: 'UNKNOWN',
+          tables: {},
+          error: `API returned status ${res.status}`
+        };
+      }
+      return await res.json();
+    } catch (err: any) {
+      return {
+        api: 'UNREACHABLE',
+        db: 'UNKNOWN',
+        tables: {},
+        error: `Network Error: ${err.message}. Check if db-bridge is running.`
+      };
+    }
   },
 
   async getStats(): Promise<GlobalStats> {
