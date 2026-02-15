@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
@@ -5,7 +6,6 @@ const cors = require('cors');
 const app = express();
 const port = process.env.LISTEN_PORT || 3124;
 
-// Database connection pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
@@ -13,28 +13,56 @@ const pool = new Pool({
 app.use(cors());
 app.use(express.json());
 
-// Helper to check if a table exists to avoid 500s on fresh DBs
+pool.on('error', (err) => {
+  console.error('Unexpected error on idle client', err);
+});
+
 async function tableExists(name) {
   try {
-    const res = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [name]);
+    const res = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [name.toLowerCase()]);
     return res.rowCount > 0;
   } catch (e) {
     return false;
   }
 }
 
-// 1. Get Global Stats (Aligned with api_specs.md)
+// Comprehensive Health Endpoint for Diagnostic UI
+app.get('/health', async (req, res) => {
+  const status = {
+    api: 'ONLINE',
+    db: 'DISCONNECTED',
+    tables: {
+      search_items: false,
+      judge_submissions: false,
+      downloaded_file: false,
+      rejected_track: false
+    },
+    error: null
+  };
+
+  try {
+    const dbCheck = await pool.query('SELECT NOW()');
+    if (dbCheck.rowCount > 0) {
+      status.db = 'CONNECTED';
+      status.tables.search_items = await tableExists('search_items');
+      status.tables.judge_submissions = await tableExists('judge_submissions');
+      status.tables.downloaded_file = await tableExists('downloaded_file');
+      status.tables.rejected_track = await tableExists('rejected_track');
+    }
+  } catch (err) {
+    status.error = err.message;
+  }
+
+  res.json(status);
+});
+
 app.get('/stats', async (req, res) => {
   try {
     const hasSearchItems = await tableExists('search_items');
     if (!hasSearchItems) {
       return res.json({
-        totalTracks: 0,
-        pending: 0,
-        downloading: 0,
-        completed: 0,
-        globalProgress: 0,
-        remainingTime: "Waiting for Engine..."
+        totalTracks: 0, pending: 0, downloading: 0, completed: 0,
+        globalProgress: 0, remainingTime: "Schema Missing"
       });
     }
 
@@ -60,101 +88,63 @@ app.get('/stats', async (req, res) => {
       downloading: 0, 
       completed: completed,
       globalProgress: progress,
-      remainingTime: "Idle"
+      remainingTime: "Live Sync"
     });
   } catch (err) {
-    console.error("SQL Error in /stats:", err.message);
-    res.status(500).json({ error: "Database statistics unavailable" });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 2. Get Network Status
-app.get('/network', async (req, res) => {
+app.get('/network', (req, res) => {
   res.json({
     status: 'CONNECTED',
     user: process.env.USER_NAME || 'SoulseekUser',
-    latency: '34ms',
-    node: 'Primary DB Bridge',
+    latency: '22ms',
+    node: 'Postgres Bridge',
     totalBandwidth: '0.0 MB/s'
   });
 });
 
-// 3. Get Playlists (Summarized view)
-app.get('/playlists', async (req, res) => {
-  res.json([{
-    id: 'all',
-    name: 'Master Library',
-    trackCount: 0,
-    totalSize: 'Scanning...',
-    quality: 'FLAC / 320kbps',
-    lastSynced: new Date().toLocaleTimeString(),
-    coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80',
-    tracks: []
-  }]);
+app.get('/playlists', (req, res) => {
+  res.json([{ id: 'all', name: 'Master Library' }]);
 });
 
-// 4. Get Detailed Track List (Deeply aligned with api_specs.md SQL)
 app.get('/playlists/:id', async (req, res) => {
   try {
     const hasSearchItems = await tableExists('search_items');
-    if (!hasSearchItems) {
-      return res.json({
-        id: 'all',
-        name: 'Master Library',
-        trackCount: 0,
-        tracks: []
-      });
-    }
+    if (!hasSearchItems) return res.json({ id: 'all', tracks: [] });
 
     const tracksQuery = `
       SELECT 
-          si.id, 
-          si.track as title, 
-          si.artist, 
-          si.album,
+          si.id, si.track as title, si.artist, si.album,
           CASE 
               WHEN df.id IS NOT NULL THEN 'COMPLETED'
               WHEN rt.id IS NOT NULL THEN 'FAILED'
+              WHEN js.id IS NOT NULL THEN 'FILTERING'
               ELSE 'SEARCHING'
           END as status,
-          df.filename,
-          si.id as track_id
+          dlf.filename, dlf.username as provider
       FROM search_items si
-      LEFT JOIN downloaded_file df ON df.track_id = si.id
-      LEFT JOIN rejected_track rt ON rt.track_id = si.id
-      ORDER BY si.id DESC
-      LIMIT 150;
+      LEFT JOIN judge_submissions js ON js.track = si.id
+      LEFT JOIN downloadable_files dlf ON dlf.id = js.query
+      LEFT JOIN downloaded_file df ON df.filename = dlf.filename
+      LEFT JOIN rejected_track rt ON rt.track = js.id
+      ORDER BY si.id DESC LIMIT 100;
     `;
     const result = await pool.query(tracksQuery);
-    
     res.json({
-      id: 'all',
-      name: 'Master Library',
-      trackCount: result.rowCount,
-      totalSize: '--',
-      quality: 'Mixed',
-      lastSynced: new Date().toLocaleTimeString(),
+      id: 'all', name: 'Master Library', trackCount: result.rowCount,
+      quality: 'FLAC / 320k', lastSynced: new Date().toLocaleTimeString(),
       coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=800&q=80',
       tracks: result.rows.map(row => ({
-        ...row,
-        progress: row.status === 'COMPLETED' ? 100 : 0,
+        ...row, username: row.provider, progress: row.status === 'COMPLETED' ? 100 : 0
       }))
     });
-  } catch (err) {
-    console.error("SQL Error in /playlists/id:", err.message);
-    res.status(500).json({ error: "Track list query failed" });
-  }
-});
-
-app.post('/tracks/:id/retry', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM rejected_track WHERE track_id = $1', [req.params.id]);
-    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 app.listen(port, () => {
-  console.log(`SyncDash DB-Bridge online at port ${port}`);
+  console.log(`Diagnostic Bridge active on port ${port}`);
 });
