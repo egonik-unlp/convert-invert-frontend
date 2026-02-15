@@ -7,7 +7,7 @@ import {
   NetworkStats, 
   GlobalStats 
 } from './types';
-import { api, HealthStatus } from './api';
+import { api, HealthStatus, API_BASE } from './api';
 import Sidebar from './components/Sidebar';
 import StatsHeader from './components/StatsHeader';
 import TrackRow from './components/TrackRow';
@@ -29,7 +29,7 @@ const App: React.FC = () => {
       const h = await api.getHealth();
       setHealth(h);
       
-      if (h.db === 'CONNECTED' && !Object.values(h.tables).some(v => v === false)) {
+      if (h.api === 'ONLINE' && h.db === 'CONNECTED' && !Object.values(h.tables).some(v => v === false)) {
         const [s, n, p] = await Promise.all([
           api.getStats(),
           api.getNetwork(),
@@ -45,8 +45,9 @@ const App: React.FC = () => {
         }
         
         setError(null);
-        // Add a tiny delay to show the "Success" state on boot screen
-        setTimeout(() => setIsBooting(false), 1000);
+        setTimeout(() => setIsBooting(false), 800);
+      } else if (h.error) {
+        setError(h.error);
       }
     } catch (err: any) {
       console.error("SyncDash Diagnostic Error:", err);
@@ -84,126 +85,191 @@ const App: React.FC = () => {
   };
 
   if (isBooting) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background-dark flex-col p-8 text-left font-mono overflow-y-auto">
-        <div className="max-w-4xl w-full bg-surface/20 border border-primary/20 rounded-2xl p-8 shadow-2xl backdrop-blur-xl relative overflow-hidden">
-          {/* Scanline Effect */}
-          <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(19,236,91,0.05)_50%,transparent_50%)] bg-[length:100%_4px] opacity-20"></div>
+    const clientHost = window.location.host;
+    const targetUrl = health?.targetUrl || `${window.location.origin}${API_BASE}`;
 
-          <div className="flex items-center gap-6 mb-10 border-b border-primary/10 pb-6 relative z-10">
-            <div className="w-16 h-16 bg-primary/20 rounded-xl flex items-center justify-center text-primary border border-primary/30 shadow-[0_0_20px_rgba(19,236,91,0.2)]">
-              <span className="material-icons text-3xl animate-spin">settings</span>
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background-dark flex-col p-4 md:p-8 text-left font-mono overflow-y-auto">
+        <div className="max-w-5xl w-full bg-surface/20 border border-primary/20 rounded-2xl p-6 md:p-10 shadow-2xl backdrop-blur-xl relative overflow-hidden">
+          {/* Animated Scanline */}
+          <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(19,236,91,0.05)_50%,transparent_50%)] bg-[length:100%_4px] opacity-20 animate-pulse"></div>
+
+          <div className="flex items-center gap-6 mb-10 border-b border-primary/10 pb-8 relative z-10">
+            <div className="w-20 h-20 bg-primary/10 rounded-2xl flex items-center justify-center text-primary border border-primary/30 shadow-[0_0_30px_rgba(19,236,91,0.2)]">
+              <span className="material-icons text-4xl animate-spin">settings</span>
             </div>
             <div>
-              <h1 className="text-2xl font-black text-primary tracking-tighter uppercase leading-none mb-2">SyncDash Initialization</h1>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Diagnostic Engine v1.1.0-Production</p>
+              <h1 className="text-3xl font-black text-primary tracking-tighter uppercase leading-none mb-2">SyncDash Boot Sequence</h1>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em]">Diagnostic Mode [STABLE_1.2]</p>
+            </div>
+          </div>
+
+          {/* Network Topology Visualization */}
+          <div className="mb-10 bg-black/40 border border-white/5 rounded-2xl p-6 relative z-10">
+            <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6">Connection Topology</h3>
+            <div className="flex flex-col md:flex-row items-center justify-between gap-8 md:gap-4 relative">
+              {/* Connector Lines */}
+              <div className="absolute top-1/2 left-0 right-0 h-px bg-slate-800 -translate-y-1/2 hidden md:block"></div>
+              
+              {/* Client Node */}
+              <div className="relative z-10 flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full bg-slate-800 border-2 border-slate-700 flex items-center justify-center text-slate-400 shadow-lg">
+                  <span className="material-icons text-xl">laptop</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase">Your Client</span>
+                  <p className="text-[10px] text-slate-300 font-mono">{clientHost}</p>
+                </div>
+              </div>
+
+              {/* API Bridge Node */}
+              <div className="relative z-10 flex flex-col items-center gap-2">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center border-2 transition-all duration-500 ${health?.api === 'ONLINE' ? 'bg-primary/20 border-primary text-primary shadow-[0_0_20px_rgba(19,236,91,0.3)]' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  <span className={`material-icons text-2xl ${health?.api === 'ONLINE' ? 'animate-pulse' : ''}`}>hub</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase">API Bridge</span>
+                  <p className={`text-[10px] font-mono ${health?.api === 'ONLINE' ? 'text-primary' : 'text-slate-400'}`}>
+                    {health?.env?.server_ips?.[0] || 'Resolving...'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Database Node */}
+              <div className="relative z-10 flex flex-col items-center gap-2">
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all duration-500 ${health?.db === 'CONNECTED' ? 'bg-primary border-primary text-background-dark shadow-[0_0_20px_rgba(19,236,91,0.3)]' : 'bg-slate-800 border-slate-700 text-slate-500'}`}>
+                  <span className="material-icons text-xl">storage</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[9px] font-bold text-slate-500 uppercase">PostgreSQL</span>
+                  <p className={`text-[10px] font-mono ${health?.db === 'CONNECTED' ? 'text-primary' : 'text-slate-400'}`}>
+                    {health?.db_config?.host || 'localhost'}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
-            {/* Core Services */}
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3">Infrastructure Status</h3>
-              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-xs">REST API Bridge</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${health?.api === 'ONLINE' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500 animate-pulse'}`}>
-                    {health?.api || 'PROBING...'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400 text-xs">PostgreSQL Link</span>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${health?.db === 'CONNECTED' ? 'bg-primary/20 text-primary' : 'bg-red-500/20 text-red-500'}`}>
-                    {health?.db || 'WAITING...'}
-                  </span>
+            {/* Connection Details */}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 mb-4">Network Analysis</h3>
+                <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 space-y-3 font-mono">
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-slate-500">Attempting Connection To:</span>
+                    <span className="text-primary truncate ml-4 max-w-[200px]" title={targetUrl}>{targetUrl}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px]">
+                    <span className="text-slate-500">API Status:</span>
+                    <span className={`font-bold ${health?.api === 'ONLINE' ? 'text-primary' : 'text-red-500 animate-pulse'}`}>
+                      {health?.api || 'INITIATING...'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] border-t border-white/5 pt-2">
+                    <span className="text-slate-500">Database Link:</span>
+                    <span className={`font-bold ${health?.db === 'CONNECTED' ? 'text-primary' : 'text-slate-500'}`}>
+                      {health?.db || 'STANDBY'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 pt-2">Schema Verification</h3>
-              <div className="grid grid-cols-2 gap-2 bg-background-dark/40 p-4 rounded-xl border border-white/5">
-                {health?.tables ? Object.entries(health.tables).map(([table, exists]) => (
-                  <div key={table} className="flex items-center gap-2">
-                    <span className={`material-icons text-[14px] ${exists ? 'text-primary' : 'text-slate-700'}`}>
-                      {exists ? 'check_circle' : 'radio_button_unchecked'}
-                    </span>
-                    <span className={`text-[10px] ${exists ? 'text-slate-200' : 'text-slate-600'}`}>{table}</span>
-                  </div>
-                )) : <p className="text-[10px] text-slate-700 col-span-2">Awaiting sequence...</p>}
+              <div>
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 mb-4">Schema Verification</h3>
+                <div className="grid grid-cols-2 gap-3 bg-background-dark/40 p-4 rounded-xl border border-white/5">
+                  {health?.tables ? Object.entries(health.tables).map(([table, exists]) => (
+                    <div key={table} className="flex items-center gap-2">
+                      <span className={`material-icons text-[14px] ${exists ? 'text-primary' : 'text-slate-800'}`}>
+                        {exists ? 'check_circle' : 'radio_button_unchecked'}
+                      </span>
+                      <span className={`text-[10px] uppercase font-bold tracking-tighter ${exists ? 'text-slate-200' : 'text-slate-700'}`}>{table}</span>
+                    </div>
+                  )) : <p className="text-[10px] text-slate-700 italic">Awaiting schema poll...</p>}
+                </div>
               </div>
             </div>
 
-            {/* Environmental Details */}
-            <div className="space-y-4">
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3">System Environment</h3>
-              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 text-[10px] font-mono space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">OS Platform:</span>
-                  <span className="text-slate-300">{health?.env?.platform || '--'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Node Runtime:</span>
-                  <span className="text-slate-300">{health?.env?.node_version || '--'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Server Uptime:</span>
-                  <span className="text-primary">{health?.env?.uptime ? `${health.env.uptime}s` : '--'}</span>
-                </div>
-                <div className="flex justify-between border-t border-white/5 pt-2 mt-2">
-                  <span className="text-slate-500">Server IPs:</span>
-                  <span className="text-slate-300 text-right">{health?.env?.server_ips?.join(', ') || 'Discovering...'}</span>
+            {/* Environmental & Hardware */}
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 mb-4">System Environment</h3>
+                <div className="bg-background-dark/40 p-5 rounded-xl border border-white/5 text-[10px] font-mono space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 italic">Backend Runtime</span>
+                    <span className="text-slate-200 font-bold">{health?.env?.node_version || '--'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 italic">Host Platform</span>
+                    <span className="text-slate-200">{health?.env?.platform || '--'}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-white/5 pt-2">
+                    <span className="text-slate-500 italic">Memory Allocation</span>
+                    <span className="text-slate-200">{health?.env?.memory_usage || '--'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 italic">Process Uptime</span>
+                    <span className="text-primary font-bold">{health?.env?.uptime ? `${health.env.uptime}s` : '--'}</span>
+                  </div>
                 </div>
               </div>
 
-              <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 pt-2">Database Metadata</h3>
-              <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5 text-[10px] font-mono space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-slate-500">DB Host:</span>
-                  <span className="text-slate-300">{health?.db_config?.host}:{health?.db_config?.port || '--'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">Catalog:</span>
-                  <span className="text-slate-300">{health?.db_config?.database || '--'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500">DB User:</span>
-                  <span className="text-slate-300">{health?.db_config?.user || '--'}</span>
+              <div>
+                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest border-l-2 border-primary pl-3 mb-4">Server Interface(s)</h3>
+                <div className="bg-background-dark/40 p-4 rounded-xl border border-white/5">
+                  <div className="flex flex-wrap gap-2">
+                    {health?.env?.server_ips?.length ? health.env.server_ips.map(ip => (
+                      <span key={ip} className="px-2 py-1 bg-primary/5 border border-primary/20 text-primary text-[9px] rounded font-bold">
+                        {ip}
+                      </span>
+                    )) : (
+                      <span className="text-[10px] text-slate-700 italic">Querying server interfaces...</span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl mt-8 relative z-10">
-              <div className="flex items-center gap-2 text-red-500 mb-2">
-                <span className="material-icons text-sm">terminal</span>
-                <span className="text-[10px] font-bold uppercase">Kernel Panic Output</span>
+            <div className="bg-red-500/10 border border-red-500/20 p-5 rounded-xl mt-10 relative z-10 shadow-[0_0_30px_rgba(239,68,68,0.1)]">
+              <div className="flex items-center gap-3 text-red-500 mb-4">
+                <span className="material-icons text-xl">warning_amber</span>
+                <span className="text-xs font-black uppercase tracking-widest">Diagnostic Kernel Exception</span>
               </div>
-              <code className="text-[10px] text-red-400 block break-all leading-relaxed bg-black/20 p-2 rounded">
-                {error}
-              </code>
+              <div className="bg-black/40 p-4 rounded border border-red-500/10">
+                <code className="text-[10px] text-red-400 block break-all leading-relaxed whitespace-pre-wrap">
+                  {error}
+                </code>
+              </div>
+              <p className="mt-4 text-[9px] text-red-500/60 italic">Verify your DATABASE_URL in the .env file and ensure the db-bridge service is running in Docker.</p>
             </div>
           )}
 
-          <div className="mt-10 flex gap-4 relative z-10">
+          <div className="mt-12 flex gap-4 relative z-10">
             <button 
-              onClick={() => checkHealthAndLoad()}
-              className="flex-1 bg-primary text-background-dark font-black py-4 rounded-xl text-xs uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_0_20px_rgba(19,236,91,0.2)]"
+              onClick={() => { setError(null); checkHealthAndLoad(); }}
+              className="flex-1 bg-primary text-background-dark font-black py-5 rounded-xl text-xs uppercase tracking-widest hover:brightness-110 active:scale-[0.98] transition-all shadow-[0_10px_30px_rgba(19,236,91,0.2)] flex items-center justify-center gap-3"
             >
-              Forced Kernel Refresh
+              <span className="material-icons text-sm">restart_alt</span>
+              Forced Interface Sync
             </button>
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 border border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors"
+              className="px-8 border border-primary/20 text-primary rounded-xl hover:bg-primary/5 transition-colors group"
+              title="Full Browser Reload"
             >
-              <span className="material-icons">refresh</span>
+              <span className="material-icons group-hover:rotate-180 transition-transform duration-500">refresh</span>
             </button>
           </div>
         </div>
 
-        <div className="mt-8 flex items-center gap-4 text-[10px] text-slate-700 uppercase tracking-[0.4em] font-bold">
-          <span>Bootloader v0.98</span>
-          <span className="w-1 h-1 bg-slate-800 rounded-full"></span>
-          <span>Core-Sync Stable</span>
+        <div className="mt-10 flex items-center gap-6 text-[10px] text-slate-800 uppercase tracking-[0.5em] font-black">
+          <span className="flex items-center gap-2"><span className="w-1.5 h-1.5 bg-slate-800 rounded-full animate-ping"></span> LOG_STREAM</span>
+          <span className="w-1.5 h-1.5 bg-slate-900 rounded-full"></span>
+          <span>NET_BOOT_ACTIVE</span>
+          <span className="w-1.5 h-1.5 bg-slate-900 rounded-full"></span>
+          <span>CORE_V1.2.4</span>
         </div>
       </div>
     );

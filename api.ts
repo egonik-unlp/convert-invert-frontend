@@ -1,7 +1,7 @@
 
 import { GlobalStats, NetworkStats, Playlist, Track } from './types';
 
-const API_BASE = '/api';
+export const API_BASE = '/api';
 
 export interface HealthStatus {
   api: string;
@@ -21,10 +21,12 @@ export interface HealthStatus {
     user: string;
   };
   error?: string;
+  targetUrl?: string; // Added to help UI display where it's looking
 }
 
 export const api = {
   async getHealth(): Promise<HealthStatus> {
+    const targetUrl = `${window.location.origin}${API_BASE}/health`;
     try {
       const res = await fetch(`${API_BASE}/health`);
       if (!res.ok) {
@@ -32,16 +34,19 @@ export const api = {
           api: 'OFFLINE (404/500)',
           db: 'UNKNOWN',
           tables: {},
+          targetUrl,
           error: `API returned status ${res.status}`
         };
       }
-      return await res.json();
+      const data = await res.json();
+      return { ...data, targetUrl };
     } catch (err: any) {
       return {
         api: 'UNREACHABLE',
         db: 'UNKNOWN',
         tables: {},
-        error: `Network Error: ${err.message}. Check if db-bridge is running.`
+        targetUrl,
+        error: `Network Error: ${err.message}. Check if db-bridge is running and accessible at ${targetUrl}`
       };
     }
   },
