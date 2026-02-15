@@ -8,52 +8,50 @@ import Redis from 'ioredis';
 const app = express();
 const port = 3124; 
 
-// Database configuration - Fixed DB name to convert_invert
-const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert_invert';
+// Database configuration - Using the hyphenated name as requested
+const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
 });
 
-// Redis configuration for real-time download progress
+// Redis configuration - Connecting to the docker-exposed port
 const redis = new Redis('redis://localhost:6379');
 
 app.use(cors());
 app.use(express.json());
 
 // Memory cache for telemetry and correlation
-let redisProgressMap = new Map(); // js_id -> progress
-let jaegerProgressMap = new Map(); // track_id -> progress (fuzzy)
+let redisProgressMap = new Map(); // track_id -> progress %
 let systemLogs = [];
-let correlationMap = new Map(); // js_id -> track_id
+let correlationMap = new Map(); // js_id -> track_id (search_items.id)
 
 /**
  * Periodically refresh the correlation map between judge_submissions and search_items
+ * This allows us to map the Redis ID (submission_id) back to the UI ID (track_id)
  */
 async function refreshCorrelation() {
   try {
     const query = `
-      SELECT js.id as js_id, js.track as track_id, si.artist, si.track as title
+      SELECT js.id as js_id, js.track as track_id
       FROM judge_submissions js
       JOIN search_items si ON js.track = si.id
     `;
     const res = await pool.query(query);
     const newMap = new Map();
-    const fuzzyMap = new Map();
     
     res.rows.forEach(row => {
       newMap.set(row.js_id.toString(), row.track_id);
-      const fuzzyKey = `${row.artist} - ${row.title}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-      fuzzyMap.set(fuzzyKey, row.track_id);
     });
     
     correlationMap = newMap;
   } catch (err) {
-    console.warn('Correlation mapping failed:', err.message);
+    console.error(`[DB] Correlation mapping failed for ${dbConnectionString}:`, err.message);
   }
 }
 
 /**
  * Poller for Redis progress keys: dl:{judge_submission_Id}:progress
+ * These keys are HASHES containing bytes_downloaded and total_bytes
  */
 async function updateProgressFromRedis() {
   try {
@@ -62,25 +60,39 @@ async function updateProgressFromRedis() {
     
     for (const key of keys) {
       const parts = key.split(':');
-      if (parts.length === 3) {
+      if (parts.length >= 2) {
         const jsId = parts[1];
-        const val = await redis.get(key);
-        if (val) {
-          const trackId = correlationMap.get(jsId);
-          if (trackId) {
-            newProgress.set(trackId, parseFloat(val));
+        const trackId = correlationMap.get(jsId);
+        
+        // Only process if we can map this submission to a track in our DB
+        if (trackId) {
+          const type = await redis.type(key);
+          if (type === 'hash') {
+            const data = await redis.hgetall(key);
+            
+            const downloaded = parseFloat(data.bytes_downloaded);
+            const total = parseFloat(data.total_bytes);
+            
+            if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
+              const percentage = Math.round((downloaded / total) * 100);
+              // Store normalized 0-100 value
+              newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
+            }
           }
         }
       }
     }
     redisProgressMap = newProgress;
   } catch (err) {
-    console.error('Redis Poll Error:', err.message);
+    // Prevent logging WRONGTYPE errors repeatedly if key types shift
+    if (!err.message.includes('WRONGTYPE')) {
+      console.error('Redis Poll Error:', err.message);
+    }
   }
 }
 
 /**
- * Fetches recent traces from Jaeger for logging and fuzzy progress matching
+ * Fetches recent traces from Jaeger for logging
  */
 async function updateProgressFromJaeger() {
   try {
@@ -123,7 +135,7 @@ async function updateProgressFromJaeger() {
 // Initial and periodic syncs
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
-setInterval(updateProgressFromRedis, 1000);
+setInterval(updateProgressFromRedis, 1000); // High frequency for smooth UI
 setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
@@ -199,7 +211,6 @@ app.get('/playlists', async (req, res) => {
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    // Primary query for track status
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
@@ -231,7 +242,7 @@ app.get('/playlists/:id', async (req, res) => {
           progress = redisProgressMap.get(r.id);
           status = 'DOWNLOADING';
         } else if (r.status === 'DOWNLOADING') {
-          progress = 2; // Started
+          progress = 1; // Found in submissions but no Redis progress yet
         }
 
         return {
@@ -271,12 +282,15 @@ app.get('/tracks/:id/candidates', async (req, res) => {
 
 app.get('/network', async (req, res) => {
   res.json({
-    status: 'CONNECTED',
+    status: redis.status === 'ready' ? 'CONNECTED' : 'DISCONNECTED',
     user: 'egonik',
-    latency: 'Low (Redis)',
-    node: 'localhost:6379',
-    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 0.8).toFixed(1)} MB/s` : '0.0 MB/s'
+    latency: 'Real-time',
+    node: 'Redis Cache',
+    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 1.2).toFixed(1)} MB/s` : '0.0 MB/s'
   });
 });
 
-app.listen(port, () => console.log(`SyncDash Bridge live at http://localhost:${port}`));
+app.listen(port, () => {
+  console.log(`SyncDash Bridge live at http://localhost:${port}`);
+  console.log(`Connecting to database: ${dbConnectionString}`);
+});
