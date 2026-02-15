@@ -19,7 +19,7 @@ const App: React.FC = () => {
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [network, setNetwork] = useState<NetworkStats | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -45,8 +45,8 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleTrackClick = (id: string) => {
-    setSelectedTrackId(id);
+  const handleTrackClick = (track: Track) => {
+    setSelectedTrack(track);
     setIsModalOpen(true);
   };
 
@@ -106,7 +106,7 @@ const App: React.FC = () => {
               <TrackRow 
                 key={track.id} 
                 track={track} 
-                onClick={() => handleTrackClick(track.id)} 
+                onClick={() => handleTrackClick(track)} 
               />
             ))}
           </div>
@@ -116,7 +116,7 @@ const App: React.FC = () => {
       </main>
 
       {isModalOpen && (
-        <SimilarityModal onClose={() => setIsModalOpen(false)} />
+        <SimilarityModal track={selectedTrack} onClose={() => setIsModalOpen(false)} />
       )}
     </div>
   );

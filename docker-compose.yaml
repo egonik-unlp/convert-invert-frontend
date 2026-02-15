@@ -1,0 +1,45 @@
+
+version: '3.8'
+
+services:
+  # The PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${USER_NAME:-postgres}
+      POSTGRES_PASSWORD: ${USER_PASSWORD:-123456}
+      POSTGRES_DB: convert_invert
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  # The Rust Backend (Engine + API)
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend # You need to create this for your Rust app
+    environment:
+      DATABASE_URL: postgres://${USER_NAME:-postgres}:${USER_PASSWORD:-123456}@db:5432/convert_invert
+      USER_NAME: ${USER_NAME}
+      USER_PASSWORD: ${USER_PASSWORD}
+      LISTEN_PORT: 3124
+    depends_on:
+      - db
+    volumes:
+      - ./music:/home/gonik/Music
+
+  # The SyncDash Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  postgres_data:
+  music:

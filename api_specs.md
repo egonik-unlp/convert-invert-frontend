@@ -1,52 +1,57 @@
 
-# SyncDash API Specifications
+# SyncDash API Implementation Guide
 
-The following REST and WebSocket endpoints are required for the frontend to function correctly.
+This document defines how the Backend API should interact with your PostgreSQL database (schema defined in `src/internals/database/schema.rs`).
 
-## 1. Authentication
-*   **POST** `/api/auth/login`: Authenticate system user.
+## 1. Status Inference Logic
+Your database stores state across multiple tables. The API must join these to determine a track's current phase.
 
-## 2. Dashboard & Stats
-*   **GET** `/api/stats`: Returns `GlobalStats`.
-*   **GET** `/api/network`: Returns `NetworkStats`.
+| Status | Condition |
+| :--- | :--- |
+| **COMPLETED** | Exists in `downloaded_file` (matched by filename). |
+| **FAILED** | Exists in `rejected_track`. |
+| **DOWNLOADING** | Linked via `judge_submissions` to `downloadable_files` AND actively in Soulseek queue. |
+| **SEARCHING** | Exists in `search_items` but no `judge_submissions` yet. |
 
-## 3. Playlists
-*   **GET** `/api/playlists`: Returns a list of all synced playlists.
-*   **POST** `/api/playlists/sync`: Trigger a new sync from a Spotify/YouTube URL.
-*   **GET** `/api/playlists/:id`: Returns detailed `Playlist` object.
+## 2. Key SQL Queries
 
-## 4. Tracks
-*   **GET** `/api/tracks`: Returns tracks for a specific playlist or global search.
-*   **POST** `/api/tracks/:id/retry`: Restart search for a track.
-
----
-
-## Database Mapping (Suggested SQL)
-
-Assuming your schema follows the standard patterns in `convert-invert`, here is how to bridge your SQL to the UI:
-
-### Global Stats
+### Get Global Stats
 ```sql
 SELECT 
-    COUNT(*) as totalTracks,
-    COUNT(CASE WHEN status = 'PENDING' THEN 1 END) as pending,
-    COUNT(CASE WHEN status = 'DOWNLOADING' THEN 1 END) as downloading,
-    COUNT(CASE WHEN status = 'COMPLETED' THEN 1 END) as completed,
-    AVG(progress) as globalProgress
-FROM tracks;
+    (SELECT COUNT(*) FROM search_items) as total_tracks,
+    (SELECT COUNT(*) FROM downloaded_file) as completed,
+    (SELECT COUNT(*) FROM rejected_track) as failed,
+    (SELECT COUNT(*) FROM judge_submissions js 
+     LEFT JOIN downloaded_file df ON df.filename = (SELECT filename FROM downloadable_files WHERE id = js.query)
+     WHERE df.id IS NULL) as pending;
 ```
 
-### Track Details
+### Get Track List (Detailed Join)
 ```sql
 SELECT 
-    id, title, artist, album, duration, status, progress, 
-    download_speed as downloadSpeed, 
-    file_size as fileSize, 
-    format, 
-    cover_art_url as coverArt
-FROM tracks
-WHERE playlist_id = ?;
+    si.id, 
+    si.track as title, 
+    si.artist, 
+    si.album,
+    CASE 
+        WHEN df.id IS NOT NULL THEN 'COMPLETED'
+        WHEN rt.id IS NOT NULL THEN 'FAILED'
+        WHEN js.id IS NOT NULL THEN 'FILTERING'
+        ELSE 'SEARCHING'
+    END as status,
+    dlf.filename,
+    dlf.username as provider
+FROM search_items si
+LEFT JOIN judge_submissions js ON js.track = si.id
+LEFT JOIN downloadable_files dlf ON dlf.id = js.query
+LEFT JOIN downloaded_file df ON df.filename = dlf.filename
+LEFT JOIN rejected_track rt ON rt.track = js.id;
 ```
 
-### Network Status
-This data usually comes from the SoulSeek client state (e.g., `slskd` or your custom client wrapper) rather than a database table.
+## 3. Recommended Technology Stack
+Since your core logic is Rust, you have two options for the API:
+1.  **Axum/Actix (Rust)**: Use the existing Diesel models. Define a `Router` that serves JSON.
+2.  **FastAPI (Python)**: Use `databases` or `SQLAlchemy` to read the Postgres tables. This is often faster to iterate on for UI-heavy features.
+
+## 4. Real-time Progress
+Your `DownloadManager` in `download_manager.rs` logs progress. To show this in the UI, you should modify the Rust code to write `bytes_downloaded` to a **Redis** key or a temporary **SQLite/Postgres** `progress` table which the API can poll.

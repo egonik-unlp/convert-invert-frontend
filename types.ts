@@ -11,18 +11,21 @@ export enum TrackStatus {
 }
 
 export interface Track {
-  id: string;
+  id: string | number; // SQL ID
+  track_id: number;    // Hash/Spotify ID from search_items
   title: string;
   artist: string;
   album: string;
-  duration: number; // in seconds
   status: TrackStatus;
-  progress: number; // 0-100
-  downloadSpeed?: string;
+  progress: number;
+  filename?: string;
+  username?: string;   // Soulseek user
   fileSize?: string;
   format?: string;
   coverArt?: string;
-  errorMessage?: string;
+  rejectReason?: string;
+  // Added downloadSpeed to match usage in components/TrackRow.tsx
+  downloadSpeed?: string;
 }
 
 export interface Playlist {
@@ -51,36 +54,4 @@ export interface GlobalStats {
   completed: number;
   globalProgress: number;
   remainingTime: string;
-}
-
-export interface SimilarityMatch {
-  score: number;
-  verdicts: {
-    type: 'title' | 'artist' | 'duration' | 'bitrate';
-    message: string;
-    impact: string;
-    status: 'pass' | 'fail' | 'warning';
-  }[];
-  source: {
-    artist: string;
-    title: string;
-    album: string;
-    duration: string;
-  };
-  match: {
-    artist: string;
-    fileName: string;
-    path: string;
-    user: string;
-    duration: string;
-    quality: string;
-  };
-  alternatives: {
-    id: string;
-    score: number;
-    user: string;
-    fileName: string;
-    bitrate: string;
-    size: string;
-  }[];
 }

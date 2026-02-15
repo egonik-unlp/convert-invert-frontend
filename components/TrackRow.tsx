@@ -19,8 +19,8 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
     [TrackStatus.IN_QUEUE]: -2,
   };
 
-  const steps = ['Parsing', 'Searching', 'Filtering', 'Downloading', 'Finalizing'];
-  const currentStepIndex = statusMap[track.status];
+  const steps = ['Parsing', 'Searching', 'Judging', 'Downloading', 'Done'];
+  const currentStepIndex = statusMap[track.status] ?? 0;
 
   const renderStep = (index: number, label: string) => {
     const isCompleted = currentStepIndex > index || track.status === TrackStatus.COMPLETED;
@@ -54,7 +54,7 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
           </span>
         </div>
         {index < steps.length - 1 && (
-          <div className={`h-0.5 w-12 transition-colors duration-500 ${isCompleted ? 'bg-primary' : 'bg-slate-800'}`}></div>
+          <div className={`h-0.5 w-10 transition-colors duration-500 ${isCompleted ? 'bg-primary' : 'bg-slate-800'}`}></div>
         )}
       </div>
     );
@@ -68,13 +68,24 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
       }`}
     >
       <div className="col-span-4 flex items-center gap-4">
-        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-primary overflow-hidden border border-white/5">
-          <img className="object-cover w-full h-full" src={track.coverArt} alt={track.title} />
+        <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center text-primary overflow-hidden border border-white/5 relative group-hover:border-primary/30 transition-all">
+          {track.coverArt ? (
+             <img className="object-cover w-full h-full" src={track.coverArt} alt={track.title} />
+          ) : (
+            <span className="material-icons text-slate-600">music_note</span>
+          )}
         </div>
         <div className="overflow-hidden">
-          {/* Fix: Property 'trackTitle' does not exist on type 'Track'. Using 'title' directly. */}
-          <div className="font-bold text-sm truncate">{track.title}</div>
-          <div className="text-xs text-slate-500 truncate">{track.artist}</div>
+          <div className="font-bold text-sm truncate group-hover:text-primary transition-colors">{track.title}</div>
+          <div className="text-xs text-slate-500 truncate flex items-center gap-2">
+            {track.artist}
+            {track.username && (
+              <>
+                <span className="w-1 h-1 rounded-full bg-slate-700"></span>
+                <span className="text-primary/70 italic text-[10px]">from {track.username}</span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -84,7 +95,15 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
                <span className="material-icons text-background-dark text-[14px] font-bold">done_all</span>
             </div>
-            <span className="text-xs font-bold uppercase tracking-widest">Download Successful</span>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold uppercase tracking-widest leading-none">Verified Match</span>
+              <span className="text-[9px] text-primary/60 truncate max-w-[200px] mt-1 font-mono italic">{track.filename}</span>
+            </div>
+          </div>
+        ) : track.status === TrackStatus.FAILED ? (
+          <div className="flex items-center gap-4 text-red-500">
+             <span className="material-icons text-sm">error_outline</span>
+             <span className="text-xs font-bold uppercase tracking-widest">Rejected: {track.rejectReason || 'Low Score'}</span>
           </div>
         ) : (
           <div className="flex items-center gap-0 w-full mb-2">
@@ -96,16 +115,17 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
       <div className="col-span-2 text-right">
         {track.status === TrackStatus.DOWNLOADING ? (
           <div>
-            <div className="text-sm font-bold text-primary animate-pulse">{track.downloadSpeed}</div>
-            <div className="text-[10px] text-slate-500 uppercase font-bold">{track.format} • {track.fileSize}</div>
+            <div className="text-sm font-bold text-primary animate-pulse">{track.downloadSpeed || '0.0 MB/s'}</div>
+            <div className="text-[10px] text-slate-500 uppercase font-bold">{track.format || 'PCM'} • {track.fileSize || '...'}</div>
           </div>
         ) : track.status === TrackStatus.COMPLETED ? (
-          <button className="text-slate-500 hover:text-primary transition-all p-2 rounded-full hover:bg-primary/10">
-            <span className="material-icons text-xl">folder_open</span>
+          <button className="text-slate-500 hover:text-primary transition-all p-2 rounded-full hover:bg-primary/10 group-hover:scale-110">
+            <span className="material-icons text-xl">file_download_done</span>
           </button>
         ) : (
           <div className="text-xs font-bold text-slate-600">
-            {track.status === TrackStatus.IN_QUEUE ? 'Queued #4' : 'Awaiting Match...'}
+             <span className="material-icons text-sm align-middle mr-1">history</span>
+             {track.status === TrackStatus.SEARCHING ? 'Scanning...' : 'In Queue'}
           </div>
         )}
       </div>
