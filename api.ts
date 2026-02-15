@@ -1,5 +1,5 @@
 
-import { GlobalStats, NetworkStats, Playlist, Track, Candidate } from './types';
+import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry } from './types';
 
 export const API_BASE = 'http://localhost:3124';
 
@@ -9,6 +9,7 @@ export interface HealthStatus {
   tables: Record<string, boolean>;
   error?: string;
   targetUrl?: string;
+  jaeger?: string;
 }
 
 export const api = {
@@ -50,6 +51,12 @@ export const api = {
 
   async getCandidates(id: string | number): Promise<Candidate[]> {
     const res = await fetch(`${API_BASE}/tracks/${id}/candidates`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async getLogs(): Promise<LogEntry[]> {
+    const res = await fetch(`${API_BASE}/logs`);
     if (!res.ok) return [];
     return res.json();
   }

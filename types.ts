@@ -19,9 +19,18 @@ export interface Candidate {
   speed?: string;
 }
 
+export interface LogEntry {
+  id: string;
+  timestamp: number;
+  message: string;
+  level: 'info' | 'warn' | 'error' | 'debug';
+  trackId?: string;
+  progress?: number;
+}
+
 export interface Track {
   id: string | number; // SQL ID
-  track_id: number;    // Hash/Spotify ID from search_items
+  track_id: string;    // External ID (Spotify/Hash)
   title: string;
   artist: string;
   album: string;
@@ -61,4 +70,5 @@ export interface GlobalStats {
   completed: number;
   globalProgress: number;
   remainingTime: string;
+  tableCounts: Record<string, number>;
 }
