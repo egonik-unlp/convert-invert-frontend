@@ -61,7 +61,7 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
             </div>
           ) : track.candidatesCount > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Candidates Found:</span>
+              <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Candidates:</span>
               <span className="px-2 py-0.5 rounded-lg bg-white/5 text-[10px] text-slate-400 font-mono font-bold">{track.candidatesCount}</span>
             </div>
           )}
@@ -77,7 +77,7 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
         ) : (
           <div className="flex flex-col items-end">
             <span className="text-sm font-black text-slate-300 font-mono italic">
-              {track.score ? `${Math.round(track.score * 100)}%` : '--%'}
+              {track.score !== null && track.score !== undefined ? `${Math.round(track.score * 100)}%` : '--%'}
             </span>
             <span className="text-[9px] font-bold text-slate-600 uppercase">Match Score</span>
           </div>

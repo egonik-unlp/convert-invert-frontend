@@ -64,10 +64,8 @@ async function updateProgressFromRedis() {
         const idStr = parts[1];
         const idNum = parseInt(idStr);
         
-        // Strategy 1: Is it a judge_submission.id?
+        // Try mapping from judge_submission ID first, then directly from search_item ID
         let trackId = correlationMap.get(idStr);
-        
-        // Strategy 2: Is it directly the search_items.id?
         if (!trackId && knownTrackIds.has(idNum)) {
           trackId = idNum;
         }
@@ -130,7 +128,7 @@ async function updateProgressFromJaeger() {
 
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
-setInterval(updateProgressFromRedis, 500); // Poll faster for updates
+setInterval(updateProgressFromRedis, 500); 
 setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
@@ -170,8 +168,8 @@ app.get('/stats', async (req, res) => {
     
     const total = counts.search_items;
     const completed = counts.downloaded_file;
-    // Download count should strictly be those in the progress map
-    const downloading = redisProgressMap.size;
+    const activeTrackIds = Array.from(redisProgressMap.keys()).filter(id => knownTrackIds.has(id));
+    const downloading = activeTrackIds.length;
     
     res.json({
       totalTracks: total,
@@ -204,6 +202,7 @@ app.get('/playlists/:id', async (req, res) => {
       SELECT 
         si.id, si.track as title, si.artist, si.album,
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
+        (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
           WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 'COMPLETED'
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
@@ -218,7 +217,7 @@ app.get('/playlists/:id', async (req, res) => {
           ELSE 1 
         END) ASC, 
         si.id DESC
-      LIMIT 250
+      LIMIT 500
     `;
 
     const tracks = await pool.query(query);
@@ -230,15 +229,15 @@ app.get('/playlists/:id', async (req, res) => {
       tracks: tracks.rows.map(r => {
         let progress = 0;
         let status = r.status;
+        const trackIdNum = parseInt(r.id);
 
-        // Force status to DOWNLOADING if it's in our Redis map
-        if (redisProgressMap.has(parseInt(r.id))) {
-          progress = redisProgressMap.get(parseInt(r.id));
+        if (redisProgressMap.has(trackIdNum)) {
+          progress = redisProgressMap.get(trackIdNum);
           status = 'DOWNLOADING';
         } else if (r.status === 'COMPLETED') {
           progress = 100;
         } else if (r.status === 'DOWNLOADING') {
-          progress = 2; // Default starting progress if in DB but not Redis yet
+          progress = 2; 
         }
 
         return {
@@ -248,6 +247,7 @@ app.get('/playlists/:id', async (req, res) => {
           album: r.album,
           status: status,
           candidatesCount: parseInt(r.candidates_count),
+          score: r.max_score ? parseFloat(r.max_score) : null,
           progress: progress
         };
       })
@@ -262,13 +262,21 @@ app.get('/logs', (req, res) => res.json(systemLogs));
 app.get('/tracks/:id/candidates', async (req, res) => {
   try {
     const query = `
-      SELECT dlf.id, dlf.username, dlf.filename
+      SELECT js.id, dlf.username, dlf.filename, js.score
       FROM judge_submissions js
       JOIN downloadable_files dlf ON js.query = dlf.id
       WHERE js.track = $1
+      ORDER BY js.score DESC
     `;
     const results = await pool.query(query, [req.params.id]);
-    res.json(results.rows);
+    res.json(results.rows.map(row => ({
+        id: row.id,
+        username: row.username,
+        filename: row.filename,
+        score: parseFloat(row.score) || 0,
+        size: 'N/A',
+        speed: 'N/A'
+    })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
