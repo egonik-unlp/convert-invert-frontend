@@ -1,20 +1,20 @@
-
-const express = require('express');
-const { Pool } = require('pg');
-const cors = require('cors');
-const os = require('os');
+import express from 'express';
+import pkg from 'pg';
+const { Pool } = pkg;
+import cors from 'cors';
+import os from 'os';
 
 const app = express();
-const port = 3124; // Hardcoded bridge port
+const port = 3124; 
 
-// Using your exact provided connection string
+// Your direct local connection string
 const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 
 const pool = new Pool({
   connectionString: dbConnectionString,
 });
 
-app.use(cors()); // Critical for "just working" without proxies
+app.use(cors());
 app.use(express.json());
 
 pool.on('error', (err) => {
@@ -90,18 +90,17 @@ app.get('/stats', async (req, res) => {
   try {
     const total = await pool.query('SELECT COUNT(*) FROM search_items');
     const completed = await pool.query('SELECT COUNT(*) FROM downloaded_file');
-    const rejected = await pool.query('SELECT COUNT(*) FROM rejected_track');
     
     const totalCount = parseInt(total.rows[0].count);
     const completedCount = parseInt(completed.rows[0].count);
     
     res.json({
       totalTracks: totalCount,
-      pending: totalCount - completedCount,
-      downloading: 0, // Placeholder as SQL schema doesn't have live speed
+      pending: Math.max(0, totalCount - completedCount),
+      downloading: 0, 
       completed: completedCount,
       globalProgress: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
-      remainingTime: "Calculating..."
+      remainingTime: "Live Syncing"
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -109,12 +108,11 @@ app.get('/stats', async (req, res) => {
 });
 
 app.get('/playlists', async (req, res) => {
-  // Return a virtual "Master Sync" playlist based on search_items
   res.json([{
     id: 'all',
-    name: 'Direct Local Sync',
+    name: 'Local DB Master Sync',
     trackCount: 0,
-    totalSize: 'Calculating...',
+    totalSize: '---',
     quality: 'High Fidelity',
     lastSynced: 'Live',
     coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
@@ -134,15 +132,17 @@ app.get('/playlists/:id', async (req, res) => {
         END as status
       FROM search_items si
       LEFT JOIN judge_submissions js ON js.track = si.id
-      LEFT JOIN downloadable_files dlf ON dlf.id = js.query
-      LEFT JOIN downloaded_file df ON df.filename = dlf.filename
-      LEFT JOIN rejected_track rt ON rt.track = js.id
+      LEFT JOIN downloaded_file df ON df.filename = (
+        SELECT filename FROM downloadable_files WHERE id = js.query LIMIT 1
+      )
+      LEFT JOIN rejected_track rt ON rt.track = si.id
+      ORDER BY si.id DESC
       LIMIT 100
     `);
 
     res.json({
       id: 'all',
-      name: 'Direct Local Sync',
+      name: 'Local DB Master Sync',
       trackCount: tracks.rowCount,
       totalSize: '---',
       quality: 'High Fidelity',
@@ -150,6 +150,7 @@ app.get('/playlists/:id', async (req, res) => {
       coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
       tracks: tracks.rows.map(r => ({
         id: r.id,
+        track_id: r.id,
         title: r.title,
         artist: r.artist,
         album: r.album,
@@ -158,6 +159,7 @@ app.get('/playlists/:id', async (req, res) => {
       }))
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -166,13 +168,13 @@ app.get('/network', async (req, res) => {
   res.json({
     status: 'CONNECTED',
     user: 'local_admin',
-    latency: '5ms',
-    node: 'soulseek_local',
+    latency: 'Local',
+    node: 'localhost:5455',
     totalBandwidth: '0.0 MB/s'
   });
 });
 
 app.listen(port, () => {
   console.log(`SyncDash Bridge live at http://localhost:${port}`);
-  console.log(`Connecting to: ${dbConnectionString}`);
+  console.log(`Connecting to Postgres at ${dbConnectionString}`);
 });
