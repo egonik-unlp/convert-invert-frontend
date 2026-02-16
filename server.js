@@ -64,7 +64,6 @@ async function updateProgressFromRedis() {
         const idStr = parts[1];
         const idNum = parseInt(idStr);
         
-        // Try mapping from judge_submission ID first, then directly from search_item ID
         let trackId = correlationMap.get(idStr);
         if (!trackId && knownTrackIds.has(idNum)) {
           trackId = idNum;
@@ -262,7 +261,7 @@ app.get('/logs', (req, res) => res.json(systemLogs));
 app.get('/tracks/:id/candidates', async (req, res) => {
   try {
     const query = `
-      SELECT js.id, dlf.username, dlf.filename, js.score
+      SELECT js.id as submission_id, dlf.id as file_id, dlf.username, dlf.filename, js.score
       FROM judge_submissions js
       JOIN downloadable_files dlf ON js.query = dlf.id
       WHERE js.track = $1
@@ -270,7 +269,8 @@ app.get('/tracks/:id/candidates', async (req, res) => {
     `;
     const results = await pool.query(query, [req.params.id]);
     res.json(results.rows.map(row => ({
-        id: row.id,
+        id: row.submission_id,
+        fileId: row.file_id,
         username: row.username,
         filename: row.filename,
         score: parseFloat(row.score) || 0,

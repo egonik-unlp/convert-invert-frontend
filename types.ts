@@ -11,7 +11,8 @@ export enum TrackStatus {
 }
 
 export interface Candidate {
-  id: number;
+  id: number;      // Submission ID
+  fileId: number;  // downloadable_files ID
   username: string;
   filename: string;
   score: number;
