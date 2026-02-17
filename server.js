@@ -6,9 +6,10 @@ import cors from 'cors';
 import Redis from 'ioredis';
 
 const app = express();
-const port = 3124; 
+const port = 3124;
 
 // Database configuration
+// const dbConnectionString = 'postgresql://postgres:postgres@db:5432/convert-invert';
 const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
@@ -57,25 +58,25 @@ async function updateProgressFromRedis() {
   try {
     const keys = await redis.keys('dl:*:progress');
     const newProgress = new Map();
-    
+
     for (const key of keys) {
       const parts = key.split(':');
       if (parts.length >= 2) {
         const idStr = parts[1];
         const idNum = parseInt(idStr);
-        
+
         let trackId = correlationMap.get(idStr);
         if (!trackId && knownTrackIds.has(idNum)) {
           trackId = idNum;
         }
-        
+
         if (trackId) {
           const type = await redis.type(key);
           if (type === 'hash') {
             const data = await redis.hgetall(key);
             const downloaded = parseFloat(data.bytes_downloaded);
             const total = parseFloat(data.total_bytes);
-            
+
             if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
               const percentage = Math.round((downloaded / total) * 100);
               newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
@@ -121,13 +122,13 @@ async function updateProgressFromJaeger() {
         }
       }
     }
-    systemLogs = [...newLogs, ...systemLogs].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
-  } catch (err) {}
+    systemLogs = [...newLogs, ...systemLogs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
+  } catch (err) { }
 }
 
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
-setInterval(updateProgressFromRedis, 500); 
+setInterval(updateProgressFromRedis, 500);
 setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
@@ -167,13 +168,13 @@ app.get('/stats', async (req, res) => {
       downloaded_files: await getCount('downloaded_files'),
       rejected_track: await getCount('rejected_track')
     };
-    
+
     const total = counts.search_items;
     const completed = counts.downloaded_files;
     const failed = counts.rejected_track;
     const activeTrackIds = Array.from(redisProgressMap.keys()).filter(id => knownTrackIds.has(id));
     const downloading = activeTrackIds.length;
-    
+
     res.json({
       totalTracks: total,
       pending: Math.max(0, total - completed - downloading - failed),
@@ -260,7 +261,7 @@ app.get('/playlists/:id', async (req, res) => {
         } else if (r.status === 'COMPLETED') {
           progress = 100;
         } else if (r.status === 'DOWNLOADING') {
-          progress = 2; 
+          progress = 2;
         }
 
         return {
@@ -294,13 +295,13 @@ app.get('/tracks/:id/candidates', async (req, res) => {
     `;
     const results = await pool.query(query, [req.params.id]);
     res.json(results.rows.map(row => ({
-        id: row.submission_id,
-        fileId: row.file_id,
-        username: row.username,
-        filename: row.filename,
-        score: parseFloat(row.score) || 0,
-        size: 'N/A',
-        speed: 'N/A'
+      id: row.submission_id,
+      fileId: row.file_id,
+      username: row.username,
+      filename: row.filename,
+      score: parseFloat(row.score) || 0,
+      size: 'N/A',
+      speed: 'N/A'
     })));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
