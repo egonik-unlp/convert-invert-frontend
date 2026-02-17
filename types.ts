@@ -11,8 +11,8 @@ export enum TrackStatus {
 }
 
 export interface Candidate {
-  id: number;      // Submission ID
-  fileId: number;  // downloadable_files ID
+  id: number;
+  fileId: number;
   username: string;
   filename: string;
   score: number;
@@ -30,17 +30,17 @@ export interface LogEntry {
 }
 
 export interface Track {
-  id: string | number; // SQL ID
-  track_id: string;    // External ID (Spotify/Hash)
+  id: string | number;
+  track_id: string;
   title: string;
   artist: string;
   album: string;
-  status: TrackStatus;
+  status: TrackStatus | 'FINALIZING';
   progress: number;
-  score?: number;      // Best similarity score
+  score?: number;
   candidatesCount: number;
-  username?: string;   // Best candidate provider
-  filename?: string;   // Best candidate filename
+  username?: string;
+  filename?: string;
   coverArt?: string;
   rejectReason?: string;
 }
@@ -69,7 +69,7 @@ export interface GlobalStats {
   pending: number;
   downloading: number;
   completed: number;
-  failed: number; // Added field
+  failed: number;
   globalProgress: number;
   remainingTime: string;
   tableCounts: Record<string, number>;

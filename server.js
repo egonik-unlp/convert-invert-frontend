@@ -21,14 +21,11 @@ app.use(cors());
 app.use(express.json());
 
 // Memory cache for telemetry and correlation
-let redisProgressMap = new Map(); // track_id -> progress %
+let redisProgressMap = new Map(); // track_id -> { progress: number, completed: boolean }
 let systemLogs = [];
 let correlationMap = new Map(); // js_id -> track_id (search_items.id)
 let knownTrackIds = new Set();  // Set of all valid search_items.id
 
-/**
- * Periodically refresh the correlation map and valid track list
- */
 async function refreshCorrelation() {
   try {
     const query = `
@@ -50,10 +47,6 @@ async function refreshCorrelation() {
   }
 }
 
-/**
- * Poller for Redis progress keys: dl:{ID}:progress
- * Handles the 'completed' flag from the Rust engine
- */
 async function updateProgressFromRedis() {
   try {
     const keys = await redis.keys('dl:*:progress');
@@ -64,90 +57,42 @@ async function updateProgressFromRedis() {
       if (parts.length >= 2) {
         const idStr = parts[1];
         const idNum = parseInt(idStr);
-        
         let trackId = correlationMap.get(idStr);
-        if (!trackId && knownTrackIds.has(idNum)) {
-          trackId = idNum;
-        }
+        if (!trackId && knownTrackIds.has(idNum)) trackId = idNum;
         
         if (trackId) {
           const type = await redis.type(key);
           if (type === 'hash') {
             const data = await redis.hgetall(key);
+            const isFinished = data.completed === 'true';
+            const downloaded = parseFloat(data.bytes_downloaded);
+            const total = parseFloat(data.total_bytes);
+            let prg = 0;
+            if (isFinished) prg = 100;
+            else if (total > 0) prg = Math.round((downloaded / total) * 100);
             
-            if (data.completed === 'true') {
-              newProgress.set(trackId, 100);
-            } else {
-              const downloaded = parseFloat(data.bytes_downloaded);
-              const total = parseFloat(data.total_bytes);
-              
-              if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
-                const percentage = Math.round((downloaded / total) * 100);
-                newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
-              }
-            }
+            newProgress.set(trackId, { progress: prg, finished: isFinished });
           }
         }
       }
     }
     redisProgressMap = newProgress;
-  } catch (err) {
-    if (!err.message.includes('WRONGTYPE')) {
-      console.error('Redis Poll Error:', err.message);
-    }
-  }
-}
-
-/**
- * Jaeger Telemetry
- */
-async function updateProgressFromJaeger() {
-  try {
-    const response = await fetch('http://localhost:16686/api/traces?service=sync-engine&limit=50&lookback=1h').catch(() => null);
-    if (!response || !response.ok) return;
-    const { data } = await response.json();
-    if (!data) return;
-    const newLogs = [];
-    for (const trace of data) {
-      for (const span of trace.spans) {
-        if (span.logs) {
-          for (const log of span.logs) {
-            const msg = log.fields.find(f => f.key === 'message' || f.key === 'event');
-            const prg = log.fields.find(f => f.key === 'progress' || f.key === 'percentage');
-            if (msg) {
-              newLogs.push({
-                id: span.spanID + log.timestamp,
-                timestamp: log.timestamp / 1000,
-                message: msg.value,
-                level: 'info',
-                progress: prg ? parseFloat(prg.value) : null
-              });
-            }
-          }
-        }
-      }
-    }
-    systemLogs = [...newLogs, ...systemLogs].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
   } catch (err) {}
 }
 
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
 setInterval(updateProgressFromRedis, 500); 
-setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
   try {
     const res = await pool.query(`SELECT COUNT(*) FROM ${table}`);
     return parseInt(res.rows[0].count);
-  } catch (e) { 
-    console.error(`Count failed for ${table}:`, e.message);
-    return 0; 
-  }
+  } catch (e) { return 0; }
 }
 
 app.get('/health', async (req, res) => {
-  const status = { api: 'ONLINE', db: 'DISCONNECTED', tables: {}, redis: 'OFFLINE', jaeger: 'OFFLINE', error: null };
+  const status = { api: 'ONLINE', db: 'DISCONNECTED', tables: {}, redis: 'OFFLINE', error: null };
   try {
     const dbCheck = await pool.query('SELECT NOW()');
     if (dbCheck.rowCount > 0) {
@@ -159,8 +104,6 @@ app.get('/health', async (req, res) => {
       }
     }
     status.redis = redis.status === 'ready' ? 'CONNECTED' : 'OFFLINE';
-    const jaegerCheck = await fetch('http://localhost:16686/api/services').catch(() => null);
-    status.jaeger = jaegerCheck?.ok ? 'CONNECTED' : 'OFFLINE';
   } catch (err) { status.error = err.message; }
   res.json(status);
 });
@@ -173,58 +116,30 @@ app.get('/stats', async (req, res) => {
       downloaded_file: await getCount('downloaded_file'),
       rejected_track: await getCount('rejected_track')
     };
-    
-    const total = counts.search_items;
-    const completed = counts.downloaded_file;
-    const failed = counts.rejected_track;
-    const activeTrackIds = Array.from(redisProgressMap.keys()).filter(id => knownTrackIds.has(id));
-    const downloading = activeTrackIds.length;
-    
     res.json({
-      totalTracks: total,
-      pending: Math.max(0, total - completed - downloading - failed),
-      downloading: downloading, 
-      completed: completed,
-      failed: failed,
-      globalProgress: total > 0 ? Math.round((completed / total) * 100) : 0,
-      remainingTime: downloading > 0 ? `${downloading} Active` : "Idle",
+      totalTracks: counts.search_items,
+      pending: Math.max(0, counts.search_items - counts.downloaded_file - counts.rejected_track),
+      downloading: redisProgressMap.size, 
+      completed: counts.downloaded_file,
+      failed: counts.rejected_track,
+      globalProgress: counts.search_items > 0 ? Math.round((counts.downloaded_file / counts.search_items) * 100) : 0,
+      remainingTime: "Live Sync",
       tableCounts: counts
     });
-  } catch (err) { 
-    console.error('Stats endpoint error:', err.message);
-    res.status(500).json({ error: err.message }); 
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/playlists', async (req, res) => {
-  try {
-    const count = await getCount('search_items');
-    res.json([{
-      id: 'all',
-      name: 'Main Library',
-      trackCount: count,
-      totalSize: '---',
-      quality: 'High Fidelity',
-      lastSynced: 'Live',
-      coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
-      tracks: []
-    }]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const count = await getCount('search_items');
+  res.json([{ id: 'all', name: 'Main Library', trackCount: count, coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200', tracks: [] }]);
 });
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    console.log(`[DB] Fetching playlist: ${req.params.id}`);
-    
     let reasonCol = 'reason';
     try {
-        const colCheck = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reason'`);
-        if (colCheck.rowCount === 0) {
-            const colCheck2 = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reject_reason'`);
-            if (colCheck2.rowCount > 0) reasonCol = 'reject_reason';
-        }
+        const colCheck = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reject_reason'`);
+        if (colCheck.rowCount > 0) reasonCol = 'reject_reason';
     } catch (e) {}
 
     const query = `
@@ -234,10 +149,7 @@ app.get('/playlists/:id', async (req, res) => {
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
-          -- TERMINAL: Failed track is absolute priority to prevent status flickering
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
-          
-          -- TERMINAL: Completed track check
           WHEN EXISTS(
               SELECT 1 FROM downloaded_file df 
               WHERE df.filename IN (
@@ -246,23 +158,11 @@ app.get('/playlists/:id', async (req, res) => {
                   WHERE js2.track = si.id
               )
           ) THEN 'COMPLETED'
-          
-          -- ACTIVE: Downloading state
-          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 'DOWNLOADING'
-          
-          -- IDLE: Initial state
+          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 'FILTERING'
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
-      ORDER BY 
-        (CASE 
-          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) AND NOT EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 0 
-          WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 1
-          WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 3
-          ELSE 2 
-        END) ASC, 
-        si.id DESC
-      LIMIT 500
+      ORDER BY si.id DESC
     `;
 
     const tracks = await pool.query(query);
@@ -276,23 +176,16 @@ app.get('/playlists/:id', async (req, res) => {
         let status = r.status;
         const trackIdNum = parseInt(r.id);
 
-        /**
-         * LOGIC FIX: Only allow Redis overrides if the DB status is not terminal.
-         * Once a track is FAILED in rejected_track, it stays FAILED.
-         */
-        const isTerminal = status === 'FAILED' || status === 'COMPLETED';
-        
-        if (!isTerminal && redisProgressMap.has(trackIdNum)) {
-          progress = redisProgressMap.get(trackIdNum);
-          if (progress === 100) {
-            status = 'COMPLETED';
-          } else {
-            status = 'DOWNLOADING';
+        if (status !== 'FAILED' && status !== 'COMPLETED') {
+          if (redisProgressMap.has(trackIdNum)) {
+            const redisData = redisProgressMap.get(trackIdNum);
+            progress = redisData.progress;
+            status = redisData.finished ? 'FINALIZING' : 'DOWNLOADING';
+          } else if (status === 'FILTERING') {
+            progress = 0;
           }
         } else if (status === 'COMPLETED') {
           progress = 100;
-        } else if (status === 'DOWNLOADING') {
-          progress = 2; // Baseline "started" progress
         }
 
         return {
@@ -308,50 +201,31 @@ app.get('/playlists/:id', async (req, res) => {
         };
       })
     });
-  } catch (err) {
-    console.error(`[DB ERROR] Failed to fetch playlist ${req.params.id}:`, err.stack);
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.get('/logs', (req, res) => res.json(systemLogs));
 
 app.get('/tracks/:id/candidates', async (req, res) => {
-  try {
-    const query = `
-      SELECT js.id as submission_id, dlf.id as file_id, dlf.username, dlf.filename, js.score
-      FROM judge_submissions js
-      JOIN downloadable_files dlf ON js.query = dlf.id
-      WHERE js.track = $1
-      ORDER BY js.score DESC
-    `;
-    const results = await pool.query(query, [req.params.id]);
-    res.json(results.rows.map(row => ({
-        id: row.submission_id,
-        fileId: row.file_id,
-        username: row.username,
-        filename: row.filename,
-        score: parseFloat(row.score) || 0,
-        size: 'N/A',
-        speed: 'N/A'
-    })));
-  } catch (err) { 
-    console.error(`[DB ERROR] Candidates query failed:`, err.message);
-    res.status(500).json({ error: err.message }); 
-  }
+  const query = `
+    SELECT js.id as submission_id, dlf.id as file_id, dlf.username, dlf.filename, js.score
+    FROM judge_submissions js
+    JOIN downloadable_files dlf ON js.query = dlf.id
+    WHERE js.track = $1
+    ORDER BY js.score DESC
+  `;
+  const results = await pool.query(query, [req.params.id]);
+  res.json(results.rows.map(row => ({
+      id: row.submission_id,
+      fileId: row.file_id,
+      username: row.username,
+      filename: row.filename,
+      score: parseFloat(row.score) || 0
+  })));
 });
 
 app.get('/network', async (req, res) => {
-  res.json({
-    status: redis.status === 'ready' ? 'CONNECTED' : 'DISCONNECTED',
-    user: 'egonik',
-    latency: 'Real-time',
-    node: 'Redis Cache',
-    totalBandwidth: redisProgressMap.size > 0 ? `${(redisProgressMap.size * 1.5).toFixed(1)} MB/s` : '0.0 MB/s'
-  });
+  res.json({ status: 'CONNECTED', user: 'egonik', latency: '0ms', node: 'Soulseek-Native', totalBandwidth: 'Live' });
 });
 
-app.listen(port, () => {
-  console.log(`SyncDash Bridge live at http://localhost:${port}`);
-  console.log(`DB: ${dbConnectionString}`);
-});
+app.listen(port, () => console.log(`SyncDash Bridge live at http://localhost:${port}`));
