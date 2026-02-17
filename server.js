@@ -21,11 +21,15 @@ app.use(cors());
 app.use(express.json());
 
 // Memory cache for telemetry and correlation
-let redisProgressMap = new Map(); // track_id -> { progress: number, completed: boolean }
+let redisProgressMap = new Map(); // track_id -> { progress: number, finished: boolean }
 let systemLogs = [];
 let correlationMap = new Map(); // js_id -> track_id (search_items.id)
 let knownTrackIds = new Set();  // Set of all valid search_items.id
 
+/**
+ * Refreshes the mapping between Judge Submissions and Search Items
+ * Crucial for translating Redis progress (JS-based) to UI rows (Track-based)
+ */
 async function refreshCorrelation() {
   try {
     const query = `
@@ -47,6 +51,10 @@ async function refreshCorrelation() {
   }
 }
 
+/**
+ * Polls Redis for active download progress.
+ * If a track is in Redis, it's currently active in the engine.
+ */
 async function updateProgressFromRedis() {
   try {
     const keys = await redis.keys('dl:*:progress');
@@ -145,11 +153,11 @@ app.get('/playlists/:id', async (req, res) => {
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
-        (SELECT ${reasonCol} FROM rejected_track rt WHERE rt.track = si.id LIMIT 1) as reject_reason,
+        (SELECT ${reasonCol} FROM rejected_track rt JOIN judge_submissions js4 ON rt.track = js4.id WHERE js4.track = si.id ORDER BY rt.id DESC LIMIT 1) as reject_reason,
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
-          WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
+          -- 1. SUCCESS IS ABSOLUTE: If any candidate for this track is in downloaded_file, it's COMPLETED
           WHEN EXISTS(
               SELECT 1 FROM downloaded_file df 
               WHERE df.filename IN (
@@ -158,7 +166,14 @@ app.get('/playlists/:id', async (req, res) => {
                   WHERE js2.track = si.id
               )
           ) THEN 'COMPLETED'
+          
+          -- 2. FAILURE IS OVERRIDDEN BY COMPLETED: Only mark as FAILED if there's a rejection AND no success
+          WHEN EXISTS(SELECT 1 FROM rejected_track rt JOIN judge_submissions js5 ON rt.track = js5.id WHERE js5.track = si.id) THEN 'FAILED'
+          
+          -- 3. ACTIVE PROCESSING: If there are judge submissions, we are at least filtering
           WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 'FILTERING'
+          
+          -- 4. INITIAL STATE: No candidates yet
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
@@ -176,14 +191,15 @@ app.get('/playlists/:id', async (req, res) => {
         let status = r.status;
         const trackIdNum = parseInt(r.id);
 
-        if (status !== 'FAILED' && status !== 'COMPLETED') {
-          if (redisProgressMap.has(trackIdNum)) {
-            const redisData = redisProgressMap.get(trackIdNum);
-            progress = redisData.progress;
-            status = redisData.finished ? 'FINALIZING' : 'DOWNLOADING';
-          } else if (status === 'FILTERING') {
-            progress = 0;
-          }
+        /**
+         * REDIS OVERRIDE:
+         * If Redis has an active entry for this track, it's DOWNLOADING.
+         * This overrides 'FAILED' or 'FILTERING' states from previous attempts.
+         */
+        if (status !== 'COMPLETED' && redisProgressMap.has(trackIdNum)) {
+          const redisData = redisProgressMap.get(trackIdNum);
+          progress = redisData.progress;
+          status = redisData.finished ? 'FINALIZING' : 'DOWNLOADING';
         } else if (status === 'COMPLETED') {
           progress = 100;
         }
@@ -201,7 +217,10 @@ app.get('/playlists/:id', async (req, res) => {
         };
       })
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('[DB ERROR] Fetch playlist failed:', err);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/logs', (req, res) => res.json(systemLogs));
