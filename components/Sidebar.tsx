@@ -13,6 +13,7 @@ const Sidebar: React.FC<SidebarProps> = ({ network, currentView, onViewChange })
     { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
     { id: 'playlists', icon: 'queue_music', label: 'Playlists' },
     { id: 'downloads', icon: 'download', label: 'Downloads' },
+    { id: 'rejected', icon: 'block', label: 'Rejected' },
     { id: 'history', icon: 'history', label: 'History' },
     { id: 'logs', icon: 'terminal', label: 'System Logs' },
   ];

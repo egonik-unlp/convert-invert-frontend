@@ -69,6 +69,7 @@ export interface GlobalStats {
   pending: number;
   downloading: number;
   completed: number;
+  failed: number; // Added field
   globalProgress: number;
   remainingTime: string;
   tableCounts: Record<string, number>;

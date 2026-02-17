@@ -15,7 +15,7 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
   return (
     <div 
       onClick={onClick}
-      className={`grid grid-cols-12 items-center px-6 py-5 bg-surface/30 border border-white/5 rounded-2xl hover:bg-surface/50 hover:border-primary/20 transition-all cursor-pointer group relative overflow-hidden active:scale-[0.99]`}
+      className={`grid grid-cols-12 items-center px-6 py-5 bg-surface/30 border border-white/5 rounded-2xl hover:bg-surface/50 hover:border-primary/20 transition-all cursor-pointer group relative overflow-hidden active:scale-[0.99] ${isFailed ? 'hover:border-red-500/30' : ''}`}
     >
       {/* Background Progress Indicator for Downloading Tracks */}
       {isDownloading && (
@@ -26,11 +26,11 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
       )}
 
       <div className="col-span-4 flex items-center gap-4 relative z-10">
-        <div className="w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center text-primary border border-white/5 group-hover:border-primary/30 transition-all">
-          <span className="material-icons text-slate-700">music_note</span>
+        <div className={`w-12 h-12 rounded-xl bg-slate-900 flex items-center justify-center border border-white/5 group-hover:border-primary/30 transition-all ${isFailed ? 'text-red-500' : 'text-primary'}`}>
+          <span className={`material-icons ${isFailed ? 'text-red-900' : 'text-slate-700'}`}>{isFailed ? 'dangerous' : 'music_note'}</span>
         </div>
         <div className="overflow-hidden">
-          <div className="font-bold text-sm truncate group-hover:text-primary transition-colors">{track.title}</div>
+          <div className={`font-bold text-sm truncate group-hover:text-primary transition-colors ${isFailed ? 'group-hover:text-red-400' : ''}`}>{track.title}</div>
           <div className="text-[11px] text-slate-500 font-medium uppercase tracking-tighter truncate">{track.artist}</div>
         </div>
       </div>
@@ -59,6 +59,13 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
                 ></div>
               </div>
             </div>
+          ) : isFailed ? (
+            <div className="flex items-center gap-2">
+              <span className="material-icons text-red-500 text-xs">info</span>
+              <span className="text-[10px] text-red-400 font-bold uppercase tracking-widest truncate max-w-sm">
+                Reason: {track.rejectReason || 'Unknown Engine Error'}
+              </span>
+            </div>
           ) : track.candidatesCount > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Candidates:</span>
@@ -76,7 +83,7 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
           </div>
         ) : (
           <div className="flex flex-col items-end">
-            <span className="text-sm font-black text-slate-300 font-mono italic">
+            <span className={`text-sm font-black font-mono italic ${isFailed ? 'text-red-500/50' : 'text-slate-300'}`}>
               {track.score !== null && track.score !== undefined ? `${Math.round(track.score * 100)}%` : '--%'}
             </span>
             <span className="text-[9px] font-bold text-slate-600 uppercase">Match Score</span>

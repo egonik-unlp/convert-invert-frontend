@@ -27,6 +27,10 @@ const StatsHeader: React.FC<StatsHeaderProps> = ({ stats }) => {
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Completed</span>
           <span className="text-2xl font-bold text-primary/80">{stats.completed}</span>
         </div>
+        <div className="flex flex-col">
+          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rejected</span>
+          <span className="text-2xl font-bold text-red-500">{stats.failed}</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-4">

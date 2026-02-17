@@ -15,7 +15,7 @@ import TrackRow from './components/TrackRow';
 import GlobalFooter from './components/GlobalFooter';
 import SimilarityModal from './components/SimilarityModal';
 
-type View = 'dashboard' | 'playlists' | 'downloads' | 'history' | 'settings' | 'logs';
+type View = 'dashboard' | 'playlists' | 'downloads' | 'rejected' | 'history' | 'settings' | 'logs';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -85,6 +85,8 @@ const App: React.FC = () => {
     switch (currentView) {
       case 'downloads':
         return activePlaylist.tracks.filter(t => t.status === TrackStatus.DOWNLOADING || t.status === TrackStatus.SEARCHING);
+      case 'rejected':
+        return activePlaylist.tracks.filter(t => t.status === TrackStatus.FAILED);
       case 'history':
         return activePlaylist.tracks.filter(t => t.status === TrackStatus.COMPLETED || t.status === TrackStatus.FAILED);
       case 'playlists':
@@ -154,6 +156,7 @@ const App: React.FC = () => {
                     <p className="text-slate-500 font-medium max-w-lg">
                       {currentView === 'dashboard' ? 'Correlating local database records with live Soulseek telemetry.' : 
                        currentView === 'downloads' ? 'Active download queue with real-time progress mapping.' :
+                       currentView === 'rejected' ? 'Tracks flagged as incompatible or missing high-fidelity candidates.' :
                        'Past activity log.'}
                     </p>
                   </div>
