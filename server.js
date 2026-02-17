@@ -52,7 +52,7 @@ async function refreshCorrelation() {
 
 /**
  * Poller for Redis progress keys: dl:{ID}:progress
- * Now handles the 'completed' flag from the Rust engine
+ * Handles the 'completed' flag from the Rust engine
  */
 async function updateProgressFromRedis() {
   try {
@@ -75,11 +75,9 @@ async function updateProgressFromRedis() {
           if (type === 'hash') {
             const data = await redis.hgetall(key);
             
-            // Priority 1: Check if engine signaled completion
             if (data.completed === 'true') {
               newProgress.set(trackId, 100);
             } else {
-              // Priority 2: Calculate percentage from bytes
               const downloaded = parseFloat(data.bytes_downloaded);
               const total = parseFloat(data.total_bytes);
               
@@ -140,7 +138,6 @@ setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
   try {
-    // Explicit singular table name for consistency with user schema
     const res = await pool.query(`SELECT COUNT(*) FROM ${table}`);
     return parseInt(res.rows[0].count);
   } catch (e) { 
@@ -219,7 +216,7 @@ app.get('/playlists', async (req, res) => {
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    console.log(`[DB] Fetching tracks for playlist: ${req.params.id}`);
+    console.log(`[DB] Fetching playlist: ${req.params.id}`);
     
     let reasonCol = 'reason';
     try {
@@ -237,6 +234,10 @@ app.get('/playlists/:id', async (req, res) => {
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
+          -- TERMINAL: Failed track is absolute priority to prevent status flickering
+          WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
+          
+          -- TERMINAL: Completed track check
           WHEN EXISTS(
               SELECT 1 FROM downloaded_file df 
               WHERE df.filename IN (
@@ -245,19 +246,19 @@ app.get('/playlists/:id', async (req, res) => {
                   WHERE js2.track = si.id
               )
           ) THEN 'COMPLETED'
-          WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 'FAILED'
+          
+          -- ACTIVE: Downloading state
           WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 'DOWNLOADING'
+          
+          -- IDLE: Initial state
           ELSE 'SEARCHING'
         END as status
       FROM search_items si
       ORDER BY 
         (CASE 
-          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 0 
+          WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) AND NOT EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 0 
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 1
-          WHEN EXISTS(
-              SELECT 1 FROM downloaded_file df 
-              WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)
-          ) THEN 3
+          WHEN EXISTS(SELECT 1 FROM downloaded_file df WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)) THEN 3
           ELSE 2 
         END) ASC, 
         si.id DESC
@@ -275,18 +276,23 @@ app.get('/playlists/:id', async (req, res) => {
         let status = r.status;
         const trackIdNum = parseInt(r.id);
 
-        // If Redis has progress data, we prioritize it for real-time feel
-        if (redisProgressMap.has(trackIdNum)) {
+        /**
+         * LOGIC FIX: Only allow Redis overrides if the DB status is not terminal.
+         * Once a track is FAILED in rejected_track, it stays FAILED.
+         */
+        const isTerminal = status === 'FAILED' || status === 'COMPLETED';
+        
+        if (!isTerminal && redisProgressMap.has(trackIdNum)) {
           progress = redisProgressMap.get(trackIdNum);
           if (progress === 100) {
             status = 'COMPLETED';
           } else {
             status = 'DOWNLOADING';
           }
-        } else if (r.status === 'COMPLETED') {
+        } else if (status === 'COMPLETED') {
           progress = 100;
-        } else if (r.status === 'DOWNLOADING') {
-          progress = 2; 
+        } else if (status === 'DOWNLOADING') {
+          progress = 2; // Baseline "started" progress
         }
 
         return {
