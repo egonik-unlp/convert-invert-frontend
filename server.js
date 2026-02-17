@@ -149,7 +149,7 @@ app.get('/health', async (req, res) => {
     const dbCheck = await pool.query('SELECT NOW()');
     if (dbCheck.rowCount > 0) {
       status.db = 'CONNECTED';
-      const tables = ['search_items', 'judge_submissions', 'downloadable_files', 'downloaded_files', 'downloaded_file', 'rejected_track'];
+      const tables = ['search_items', 'judge_submissions', 'downloadable_files', 'downloaded_file', 'rejected_track'];
       for(const t of tables) {
         const check = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [t]);
         status.tables[t] = check.rowCount > 0;
@@ -172,12 +172,12 @@ app.get('/stats', async (req, res) => {
     const counts = {
       search_items: await getCount('search_items'),
       judge_submissions: await getCount('judge_submissions'),
-      downloaded_files: await getCount('downloaded_files'),
+      downloaded_file: await getCount('downloaded_file'),
       rejected_track: await getCount('rejected_track')
     };
     
     const total = counts.search_items;
-    const completed = counts.downloaded_files;
+    const completed = counts.downloaded_file;
     const failed = counts.rejected_track;
     const activeTrackIds = Array.from(redisProgressMap.keys()).filter(id => knownTrackIds.has(id));
     const downloading = activeTrackIds.length;
@@ -238,15 +238,8 @@ app.get('/playlists/:id', async (req, res) => {
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
           WHEN EXISTS(
-              SELECT 1 FROM downloaded_files df 
+              SELECT 1 FROM downloaded_file df 
               WHERE df.filename IN (
-                  SELECT filename FROM downloadable_files dlf 
-                  JOIN judge_submissions js2 ON dlf.id = js2.query 
-                  WHERE js2.track = si.id
-              )
-          ) OR EXISTS(
-              SELECT 1 FROM downloaded_file df2 
-              WHERE df2.filename IN (
                   SELECT filename FROM downloadable_files dlf 
                   JOIN judge_submissions js2 ON dlf.id = js2.query 
                   WHERE js2.track = si.id
@@ -262,7 +255,7 @@ app.get('/playlists/:id', async (req, res) => {
           WHEN EXISTS(SELECT 1 FROM judge_submissions js3 WHERE js3.track = si.id) THEN 0 
           WHEN EXISTS(SELECT 1 FROM rejected_track rt WHERE rt.track = si.id) THEN 1
           WHEN EXISTS(
-              SELECT 1 FROM downloaded_files df 
+              SELECT 1 FROM downloaded_file df 
               WHERE df.filename IN (SELECT filename FROM downloadable_files dlf JOIN judge_submissions js2 ON dlf.id = js2.query WHERE js2.track = si.id)
           ) THEN 3
           ELSE 2 
