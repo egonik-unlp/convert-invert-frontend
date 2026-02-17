@@ -12,6 +12,29 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
   const isFailed = track.status === TrackStatus.FAILED;
   const isDownloading = track.status === TrackStatus.DOWNLOADING;
 
+  /**
+   * Translates technical engine enums into human-readable descriptions
+   */
+  const formatRejectReason = (reason?: string) => {
+    if (!reason) return 'Unknown Engine Error';
+    
+    const mapping: Record<string, string> = {
+      'LOW_SIMILARITY': 'Match confidence was below the 85% fidelity threshold',
+      'NO_CANDIDATES': 'No matching files were found on the Soulseek network',
+      'BAD_QUALITY': 'Available versions did not meet bitrate or sample rate requirements',
+      'FILE_SIZE_MISMATCH': 'Candidate file size deviated significantly from expected duration',
+      'USER_BLACKLISTED': 'Source provider is currently on the engine ignore list',
+      'ALREADY_EXISTS': 'This track is already present in your local destination library',
+      'TIMEOUT': 'Search cycle exceeded the maximum time allotment',
+      'MANUAL_REJECT': 'This track was manually excluded from the sync cycle',
+      'PARSING_ERROR': 'Metadata extraction from the source failed',
+      'BITRATE_TOO_LOW': 'Candidates were rejected for insufficient audio quality (Low Bitrate)',
+      'WRONG_EXTENSION': 'Filtered out non-audio or incompatible container formats'
+    };
+
+    return mapping[reason.toUpperCase()] || `Engine Error: ${reason.replace(/_/g, ' ').toLowerCase()}`;
+  };
+
   return (
     <div 
       onClick={onClick}
@@ -61,9 +84,9 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
             </div>
           ) : isFailed ? (
             <div className="flex items-center gap-2">
-              <span className="material-icons text-red-500 text-xs">info</span>
-              <span className="text-[10px] text-red-400 font-bold uppercase tracking-widest truncate max-w-sm">
-                Reason: {track.rejectReason || 'Unknown Engine Error'}
+              <span className="material-icons text-red-500 text-[14px]">report_problem</span>
+              <span className="text-[10px] text-slate-400 font-medium uppercase tracking-widest truncate max-w-sm">
+                {formatRejectReason(track.rejectReason)}
               </span>
             </div>
           ) : track.candidatesCount > 0 && (
