@@ -52,6 +52,7 @@ async function refreshCorrelation() {
 
 /**
  * Poller for Redis progress keys: dl:{ID}:progress
+ * Now handles the 'completed' flag from the Rust engine
  */
 async function updateProgressFromRedis() {
   try {
@@ -73,12 +74,19 @@ async function updateProgressFromRedis() {
           const type = await redis.type(key);
           if (type === 'hash') {
             const data = await redis.hgetall(key);
-            const downloaded = parseFloat(data.bytes_downloaded);
-            const total = parseFloat(data.total_bytes);
             
-            if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
-              const percentage = Math.round((downloaded / total) * 100);
-              newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
+            // Priority 1: Check if engine signaled completion
+            if (data.completed === 'true') {
+              newProgress.set(trackId, 100);
+            } else {
+              // Priority 2: Calculate percentage from bytes
+              const downloaded = parseFloat(data.bytes_downloaded);
+              const total = parseFloat(data.total_bytes);
+              
+              if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
+                const percentage = Math.round((downloaded / total) * 100);
+                newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
+              }
             }
           }
         }
@@ -132,10 +140,8 @@ setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
   try {
-    const res = await pool.query(`SELECT COUNT(*) FROM ${table}`).catch(async () => {
-        const singular = table.endsWith('s') ? table.slice(0, -1) : table;
-        return await pool.query(`SELECT COUNT(*) FROM ${singular}`);
-    });
+    // Explicit singular table name for consistency with user schema
+    const res = await pool.query(`SELECT COUNT(*) FROM ${table}`);
     return parseInt(res.rows[0].count);
   } catch (e) { 
     console.error(`Count failed for ${table}:`, e.message);
@@ -153,11 +159,6 @@ app.get('/health', async (req, res) => {
       for(const t of tables) {
         const check = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [t]);
         status.tables[t] = check.rowCount > 0;
-        
-        if (t === 'rejected_track' && check.rowCount > 0) {
-            const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track'`);
-            status.tables[`rejected_track_columns`] = cols.rows.map(r => r.column_name);
-        }
       }
     }
     status.redis = redis.status === 'ready' ? 'CONNECTED' : 'OFFLINE';
@@ -218,9 +219,8 @@ app.get('/playlists', async (req, res) => {
 
 app.get('/playlists/:id', async (req, res) => {
   try {
-    console.log(`[DB] Fetching playlist: ${req.params.id}`);
+    console.log(`[DB] Fetching tracks for playlist: ${req.params.id}`);
     
-    // Check if rejected_track uses 'reason' or 'reject_reason' or 'msg'
     let reasonCol = 'reason';
     try {
         const colCheck = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reason'`);
@@ -275,9 +275,14 @@ app.get('/playlists/:id', async (req, res) => {
         let status = r.status;
         const trackIdNum = parseInt(r.id);
 
+        // If Redis has progress data, we prioritize it for real-time feel
         if (redisProgressMap.has(trackIdNum)) {
           progress = redisProgressMap.get(trackIdNum);
-          status = 'DOWNLOADING';
+          if (progress === 100) {
+            status = 'COMPLETED';
+          } else {
+            status = 'DOWNLOADING';
+          }
         } else if (r.status === 'COMPLETED') {
           progress = 100;
         } else if (r.status === 'DOWNLOADING') {
@@ -299,7 +304,7 @@ app.get('/playlists/:id', async (req, res) => {
     });
   } catch (err) {
     console.error(`[DB ERROR] Failed to fetch playlist ${req.params.id}:`, err.stack);
-    res.status(500).json({ error: err.message, stack: process.env.NODE_ENV === 'development' ? err.stack : undefined });
+    res.status(500).json({ error: err.message });
   }
 });
 
