@@ -12,6 +12,18 @@ export interface HealthStatus {
   jaeger?: string;
 }
 
+const handleResponse = async (res: Response, fallbackMsg: string) => {
+  if (!res.ok) {
+    let detail = "";
+    try {
+      const errorJson = await res.json();
+      detail = errorJson.error || errorJson.message || "";
+    } catch (e) {}
+    throw new Error(detail ? `${fallbackMsg}: ${detail}` : fallbackMsg);
+  }
+  return res.json();
+};
+
 export const api = {
   async getHealth(): Promise<HealthStatus> {
     const targetUrl = `${API_BASE}/health`;
@@ -27,14 +39,12 @@ export const api = {
 
   async getStats(): Promise<GlobalStats> {
     const res = await fetch(`${API_BASE}/stats`);
-    if (!res.ok) throw new Error("Stats unavailable");
-    return res.json();
+    return handleResponse(res, "Stats unavailable");
   },
 
   async getNetwork(): Promise<NetworkStats> {
     const res = await fetch(`${API_BASE}/network`);
-    if (!res.ok) throw new Error("Network offline");
-    return res.json();
+    return handleResponse(res, "Network offline");
   },
 
   async getPlaylists(): Promise<Playlist[]> {
@@ -45,8 +55,7 @@ export const api = {
 
   async getPlaylist(id: string): Promise<Playlist> {
     const res = await fetch(`${API_BASE}/playlists/${id}`);
-    if (!res.ok) throw new Error("Track query failed");
-    return res.json();
+    return handleResponse(res, "Track query failed");
   },
 
   async getCandidates(id: string | number): Promise<Candidate[]> {

@@ -6,10 +6,9 @@ import cors from 'cors';
 import Redis from 'ioredis';
 
 const app = express();
-const port = 3124;
+const port = 3124; 
 
 // Database configuration
-// const dbConnectionString = 'postgresql://postgres:postgres@db:5432/convert-invert';
 const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
@@ -47,7 +46,7 @@ async function refreshCorrelation() {
     const tracksRes = await pool.query(`SELECT id FROM search_items`);
     knownTrackIds = new Set(tracksRes.rows.map(r => parseInt(r.id)));
   } catch (err) {
-    console.error(`[DB] Correlation failed:`, err.message);
+    console.error(`[DB] Correlation refresh failed:`, err.message);
   }
 }
 
@@ -58,25 +57,25 @@ async function updateProgressFromRedis() {
   try {
     const keys = await redis.keys('dl:*:progress');
     const newProgress = new Map();
-
+    
     for (const key of keys) {
       const parts = key.split(':');
       if (parts.length >= 2) {
         const idStr = parts[1];
         const idNum = parseInt(idStr);
-
+        
         let trackId = correlationMap.get(idStr);
         if (!trackId && knownTrackIds.has(idNum)) {
           trackId = idNum;
         }
-
+        
         if (trackId) {
           const type = await redis.type(key);
           if (type === 'hash') {
             const data = await redis.hgetall(key);
             const downloaded = parseFloat(data.bytes_downloaded);
             const total = parseFloat(data.total_bytes);
-
+            
             if (!isNaN(downloaded) && !isNaN(total) && total > 0) {
               const percentage = Math.round((downloaded / total) * 100);
               newProgress.set(trackId, Math.min(100, Math.max(0, percentage)));
@@ -122,13 +121,13 @@ async function updateProgressFromJaeger() {
         }
       }
     }
-    systemLogs = [...newLogs, ...systemLogs].sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
-  } catch (err) { }
+    systemLogs = [...newLogs, ...systemLogs].sort((a,b) => b.timestamp - a.timestamp).slice(0, 100);
+  } catch (err) {}
 }
 
 refreshCorrelation();
 setInterval(refreshCorrelation, 10000);
-setInterval(updateProgressFromRedis, 500);
+setInterval(updateProgressFromRedis, 500); 
 setInterval(updateProgressFromJaeger, 3000);
 
 async function getCount(table) {
@@ -138,7 +137,10 @@ async function getCount(table) {
         return await pool.query(`SELECT COUNT(*) FROM ${singular}`);
     });
     return parseInt(res.rows[0].count);
-  } catch (e) { return 0; }
+  } catch (e) { 
+    console.error(`Count failed for ${table}:`, e.message);
+    return 0; 
+  }
 }
 
 app.get('/health', async (req, res) => {
@@ -151,6 +153,11 @@ app.get('/health', async (req, res) => {
       for(const t of tables) {
         const check = await pool.query(`SELECT 1 FROM information_schema.tables WHERE table_name = $1`, [t]);
         status.tables[t] = check.rowCount > 0;
+        
+        if (t === 'rejected_track' && check.rowCount > 0) {
+            const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track'`);
+            status.tables[`rejected_track_columns`] = cols.rows.map(r => r.column_name);
+        }
       }
     }
     status.redis = redis.status === 'ready' ? 'CONNECTED' : 'OFFLINE';
@@ -168,13 +175,13 @@ app.get('/stats', async (req, res) => {
       downloaded_files: await getCount('downloaded_files'),
       rejected_track: await getCount('rejected_track')
     };
-
+    
     const total = counts.search_items;
     const completed = counts.downloaded_files;
     const failed = counts.rejected_track;
     const activeTrackIds = Array.from(redisProgressMap.keys()).filter(id => knownTrackIds.has(id));
     const downloading = activeTrackIds.length;
-
+    
     res.json({
       totalTracks: total,
       pending: Math.max(0, total - completed - downloading - failed),
@@ -185,28 +192,48 @@ app.get('/stats', async (req, res) => {
       remainingTime: downloading > 0 ? `${downloading} Active` : "Idle",
       tableCounts: counts
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error('Stats endpoint error:', err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/playlists', async (req, res) => {
-  res.json([{
-    id: 'all',
-    name: 'Main Library',
-    trackCount: await getCount('search_items'),
-    totalSize: '---',
-    quality: 'High Fidelity',
-    lastSynced: 'Live',
-    coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
-    tracks: []
-  }]);
+  try {
+    const count = await getCount('search_items');
+    res.json([{
+      id: 'all',
+      name: 'Main Library',
+      trackCount: count,
+      totalSize: '---',
+      quality: 'High Fidelity',
+      lastSynced: 'Live',
+      coverArt: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?auto=format&fit=crop&q=80&w=200',
+      tracks: []
+    }]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/playlists/:id', async (req, res) => {
   try {
+    console.log(`[DB] Fetching playlist: ${req.params.id}`);
+    
+    // Check if rejected_track uses 'reason' or 'reject_reason' or 'msg'
+    let reasonCol = 'reason';
+    try {
+        const colCheck = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reason'`);
+        if (colCheck.rowCount === 0) {
+            const colCheck2 = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reject_reason'`);
+            if (colCheck2.rowCount > 0) reasonCol = 'reject_reason';
+        }
+    } catch (e) {}
+
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
-        (SELECT reason FROM rejected_track rt WHERE rt.track = si.id LIMIT 1) as reject_reason,
+        (SELECT ${reasonCol} FROM rejected_track rt WHERE rt.track = si.id LIMIT 1) as reject_reason,
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
@@ -261,7 +288,7 @@ app.get('/playlists/:id', async (req, res) => {
         } else if (r.status === 'COMPLETED') {
           progress = 100;
         } else if (r.status === 'DOWNLOADING') {
-          progress = 2;
+          progress = 2; 
         }
 
         return {
@@ -278,7 +305,8 @@ app.get('/playlists/:id', async (req, res) => {
       })
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[DB ERROR] Failed to fetch playlist ${req.params.id}:`, err.stack);
+    res.status(500).json({ error: err.message, stack: process.env.NODE_ENV === 'development' ? err.stack : undefined });
   }
 });
 
@@ -295,15 +323,18 @@ app.get('/tracks/:id/candidates', async (req, res) => {
     `;
     const results = await pool.query(query, [req.params.id]);
     res.json(results.rows.map(row => ({
-      id: row.submission_id,
-      fileId: row.file_id,
-      username: row.username,
-      filename: row.filename,
-      score: parseFloat(row.score) || 0,
-      size: 'N/A',
-      speed: 'N/A'
+        id: row.submission_id,
+        fileId: row.file_id,
+        username: row.username,
+        filename: row.filename,
+        score: parseFloat(row.score) || 0,
+        size: 'N/A',
+        speed: 'N/A'
     })));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error(`[DB ERROR] Candidates query failed:`, err.message);
+    res.status(500).json({ error: err.message }); 
+  }
 });
 
 app.get('/network', async (req, res) => {

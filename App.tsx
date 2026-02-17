@@ -30,30 +30,39 @@ const App: React.FC = () => {
   const [isBooting, setIsBooting] = useState(true);
 
   const checkHealthAndLoad = async () => {
+    setIsBooting(true);
+    setError(null);
     try {
       const h = await api.getHealth();
       setHealth(h);
+      
       if (h.api === 'ONLINE' && h.db === 'CONNECTED') {
-        const [s, n, p, l] = await Promise.all([
-          api.getStats(),
-          api.getNetwork(),
-          api.getPlaylists(),
-          api.getLogs()
-        ]);
+        // Sequentially load to better catch specific failure points
+        const s = await api.getStats();
         setStats(s);
+        
+        const n = await api.getNetwork();
         setNetwork(n);
+        
+        const p = await api.getPlaylists();
+        const l = await api.getLogs();
         setLogs(l);
+
         if (p && p.length > 0) {
           const detailed = await api.getPlaylist(p[0].id);
           setActivePlaylist(detailed);
         }
-        setError(null);
+        
         setTimeout(() => setIsBooting(false), 800);
       } else if (h.error) {
-        setError(h.error);
+        throw new Error(`Health Check Failure: ${h.error}`);
+      } else {
+        throw new Error(`Database bridge reported as ${h.db || 'OFFLINE'}`);
       }
     } catch (err: any) {
+      console.error("Boot failure:", err);
       setError(err.message || "Fatal error connecting to DB Bridge.");
+      setIsBooting(true); // Keep in boot state to show error
     }
   };
 
@@ -61,7 +70,7 @@ const App: React.FC = () => {
     checkHealthAndLoad();
     const interval = setInterval(() => {
       if (!isBooting) loadDashboardData();
-    }, 1500); // Polling faster for real-time progress
+    }, 1500);
     return () => clearInterval(interval);
   }, [isBooting]);
 
@@ -104,12 +113,42 @@ const App: React.FC = () => {
 
   if (isBooting) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background-dark flex-col p-8 text-left font-mono text-slate-400">
-         <div className="w-24 h-24 mb-8 bg-primary/10 rounded-full flex items-center justify-center border border-primary/30 animate-pulse">
-            <span className="material-icons text-primary text-4xl">settings_input_component</span>
+      <div className="flex min-h-screen items-center justify-center bg-background-dark flex-col p-8 text-center font-sans text-slate-400">
+         <div className={`w-24 h-24 mb-8 bg-primary/10 rounded-full flex items-center justify-center border transition-all duration-500 ${error ? 'border-red-500/30 bg-red-500/5 scale-90' : 'border-primary/30 animate-pulse'}`}>
+            <span className={`material-icons text-4xl ${error ? 'text-red-500' : 'text-primary'}`}>
+              {error ? 'report_gmailerrorred' : 'settings_input_component'}
+            </span>
          </div>
-         <p className="font-bold uppercase tracking-[0.3em] text-xs">Initializing Sync Engine Dashboard</p>
-         {error && <p className="mt-4 text-red-500 text-[10px] bg-red-500/5 p-4 border border-red-500/20 rounded-lg">{error}</p>}
+         <p className="font-black uppercase tracking-[0.3em] text-[10px] mb-4 text-slate-500">Initializing Sync Engine Dashboard</p>
+         
+         {error ? (
+           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-lg w-full">
+             <div className="bg-red-500/5 p-6 border border-red-500/20 rounded-3xl mb-6">
+                <p className="text-red-400 font-mono text-xs leading-relaxed break-words">{error}</p>
+             </div>
+             <button 
+               onClick={() => checkHealthAndLoad()}
+               className="bg-white/5 hover:bg-white/10 text-slate-200 font-black px-8 py-3 rounded-2xl text-[10px] uppercase tracking-widest border border-white/10 transition-all flex items-center gap-3 mx-auto"
+             >
+               <span className="material-icons text-sm">refresh</span>
+               Retry Initialization
+             </button>
+           </div>
+         ) : (
+           <div className="flex flex-col items-center">
+             <div className="h-1 w-48 bg-white/5 rounded-full overflow-hidden mt-4">
+                <div className="h-full bg-primary animate-[loading_2s_infinite]"></div>
+             </div>
+           </div>
+         )}
+         
+         <style>{`
+           @keyframes loading {
+             0% { width: 0%; transform: translateX(-100%); }
+             50% { width: 50%; transform: translateX(50%); }
+             100% { width: 100%; transform: translateX(100%); }
+           }
+         `}</style>
       </div>
     );
   }
