@@ -83,6 +83,17 @@ const WorkersView: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-3">
+          {workers.length > 0 && (
+            <a 
+              href="http://localhost:16686" 
+              target="_blank" 
+              rel="noreferrer"
+              className="bg-primary/10 hover:bg-primary/20 text-primary font-black px-6 py-3 rounded-2xl text-[10px] uppercase tracking-widest border border-primary/20 transition-all flex items-center gap-2"
+            >
+              <span className="material-icons text-sm">analytics</span>
+              View Traces
+            </a>
+          )}
           <button 
             onClick={handleStopAll}
             disabled={loading || workers.length === 0}

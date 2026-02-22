@@ -23,6 +23,51 @@ app.use(express.json());
 // Memory cache for telemetry and correlation
 let redisProgressMap = new Map(); // track_id -> { progress: number, finished: boolean }
 let systemLogs = [];
+
+const JAEGER_API = 'http://localhost:16686/api/traces';
+
+/**
+ * Fetches latest spans from Jaeger and converts them to system logs
+ */
+async function fetchJaegerLogs() {
+  try {
+    const response = await fetch(`${JAEGER_API}?service=convert-invert&limit=20`);
+    if (!response.ok) return;
+    const data = await response.json();
+    
+    const newLogs = [];
+    if (data.data) {
+      data.data.forEach(trace => {
+        trace.spans.forEach(span => {
+          newLogs.push({
+            id: `${span.spanID}-start`,
+            timestamp: span.startTime / 1000,
+            message: `[SPAN] ${span.operationName} started`,
+            level: 'info'
+          });
+
+          if (span.logs) {
+            span.logs.forEach((log, idx) => {
+              const msgField = log.fields.find(f => f.key === 'message' || f.key === 'event');
+              if (msgField) {
+                newLogs.push({
+                  id: `${span.spanID}-log-${idx}`,
+                  timestamp: log.timestamp / 1000,
+                  message: msgField.value,
+                  level: 'debug'
+                });
+              }
+            });
+          }
+        });
+      });
+    }
+
+    systemLogs = newLogs.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
+  } catch (err) {}
+}
+
+setInterval(fetchJaegerLogs, 5000);
 let correlationMap = new Map(); // js_id -> track_id (search_items.id)
 let knownTrackIds = new Set();  // Set of all valid search_items.id
 
@@ -100,7 +145,14 @@ async function getCount(table) {
 }
 
 app.get('/health', async (req, res) => {
-  const status = { api: 'ONLINE', db: 'DISCONNECTED', tables: {}, redis: 'OFFLINE', error: null };
+  const status = { 
+    api: 'ONLINE', 
+    db: 'DISCONNECTED', 
+    tables: {}, 
+    redis: 'OFFLINE', 
+    jaeger: 'OFFLINE',
+    error: null 
+  };
   try {
     const dbCheck = await pool.query('SELECT NOW()');
     if (dbCheck.rowCount > 0) {
@@ -112,6 +164,12 @@ app.get('/health', async (req, res) => {
       }
     }
     status.redis = redis.status === 'ready' ? 'CONNECTED' : 'OFFLINE';
+    
+    try {
+      const jCheck = await fetch('http://localhost:16686/api/services');
+      if (jCheck.ok) status.jaeger = 'ONLINE';
+    } catch (e) {}
+
   } catch (err) { status.error = err.message; }
   res.json(status);
 });
@@ -145,15 +203,20 @@ app.get('/playlists', async (req, res) => {
 app.get('/playlists/:id', async (req, res) => {
   try {
     let reasonCol = 'reason';
+    let hasValueCol = false;
     try {
         const colCheck = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'reject_reason'`);
         if (colCheck.rowCount > 0) reasonCol = 'reject_reason';
+        
+        const valCheck = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name = 'rejected_track' AND column_name = 'value'`);
+        if (valCheck.rowCount > 0) hasValueCol = true;
     } catch (e) {}
 
     const query = `
       SELECT 
         si.id, si.track as title, si.artist, si.album,
         (SELECT ${reasonCol} FROM rejected_track rt JOIN judge_submissions js4 ON rt.track = js4.id WHERE js4.track = si.id ORDER BY rt.id DESC LIMIT 1) as reject_reason,
+        ${hasValueCol ? `(SELECT value FROM rejected_track rt JOIN judge_submissions js4 ON rt.track = js4.id WHERE js4.track = si.id ORDER BY rt.id DESC LIMIT 1) as reject_value,` : ''}
         (SELECT COUNT(*) FROM judge_submissions js WHERE js.track = si.id) as candidates_count,
         (SELECT MAX(js.score) FROM judge_submissions js WHERE js.track = si.id) as max_score,
         CASE 
@@ -191,11 +254,6 @@ app.get('/playlists/:id', async (req, res) => {
         let status = r.status;
         const trackIdNum = parseInt(r.id);
 
-        /**
-         * REDIS OVERRIDE:
-         * If Redis has an active entry for this track, it's DOWNLOADING.
-         * This overrides 'FAILED' or 'FILTERING' states from previous attempts.
-         */
         if (status !== 'COMPLETED' && redisProgressMap.has(trackIdNum)) {
           const redisData = redisProgressMap.get(trackIdNum);
           progress = redisData.progress;
@@ -204,13 +262,19 @@ app.get('/playlists/:id', async (req, res) => {
           progress = 100;
         }
 
+        let formattedReason = r.reject_reason;
+        if (formattedReason) {
+          formattedReason = formattedReason.replace(/_/g, ' ').toUpperCase();
+          if (r.reject_value) formattedReason += `: ${r.reject_value}`;
+        }
+
         return {
           id: r.id,
           title: r.title,
           artist: r.artist,
           album: r.album,
           status: status,
-          rejectReason: r.reject_reason,
+          rejectReason: formattedReason,
           candidatesCount: parseInt(r.candidates_count),
           score: r.max_score ? parseFloat(r.max_score) : null,
           progress: progress

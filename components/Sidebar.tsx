@@ -1,14 +1,16 @@
 
 import React from 'react';
 import { NetworkStats } from '../types';
+import { HealthStatus } from '../api';
 
 interface SidebarProps {
   network: NetworkStats;
+  health: HealthStatus | null;
   currentView: string;
   onViewChange: (view: any) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ network, currentView, onViewChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ network, health, currentView, onViewChange }) => {
   const navItems = [
     { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
     { id: 'playlists', icon: 'queue_music', label: 'Playlists' },
@@ -68,6 +70,16 @@ const Sidebar: React.FC<SidebarProps> = ({ network, currentView, onViewChange })
           </div>
           <p className="text-[10px] text-slate-500 font-medium">Session: <span className="text-slate-200">{network.user}</span></p>
           <div className="mt-2 text-[11px] text-primary font-mono font-bold tracking-tight">{network.node}</div>
+          
+          {health && (
+            <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Jaeger Tracing</span>
+              <div className={`flex items-center gap-1.5 ${health.jaeger === 'ONLINE' ? 'text-primary' : 'text-slate-600'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${health.jaeger === 'ONLINE' ? 'bg-primary shadow-[0_0_8px_rgba(19,236,91,0.5)]' : 'bg-slate-700'}`}></div>
+                <span className="text-[10px] font-bold uppercase tracking-tight">{health.jaeger || 'OFFLINE'}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </aside>

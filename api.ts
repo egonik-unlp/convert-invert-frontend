@@ -12,6 +12,19 @@ export interface HealthStatus {
   jaeger?: string;
 }
 
+export interface JaegerTrace {
+  data: Array<{
+    traceID: string;
+    spans: Array<{
+      operationName: string;
+      startTime: number;
+      duration: number;
+      tags: Array<{ key: string; value: any }>;
+      logs: Array<{ timestamp: number; fields: Array<{ key: string; value: any }> }>;
+    }>;
+  }>;
+}
+
 const handleResponse = async (res: Response, fallbackMsg: string) => {
   if (!res.ok) {
     let detail = "";

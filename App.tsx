@@ -38,6 +38,14 @@ const App: React.FC = () => {
       setHealth(h);
       
       if (h.api === 'ONLINE' && h.db === 'CONNECTED') {
+        // Check if required tables exist
+        const requiredTables = ['search_items', 'judge_submissions', 'downloadable_files', 'downloaded_file', 'rejected_track'];
+        const missingTables = requiredTables.filter(t => !h.tables[t]);
+        
+        if (missingTables.length > 0) {
+          throw new Error(`Database schema incomplete. Missing tables: ${missingTables.join(', ')}. Please ensure trigger_server has run migrations.`);
+        }
+
         // Sequentially load to better catch specific failure points
         const s = await api.getStats();
         setStats(s);
@@ -159,6 +167,7 @@ const App: React.FC = () => {
       <Sidebar 
         currentView={currentView} 
         onViewChange={setCurrentView}
+        health={health}
         network={network || { status: 'DISCONNECTED', user: '...', latency: '...', node: '...', totalBandwidth: '...' }} 
       />
       
