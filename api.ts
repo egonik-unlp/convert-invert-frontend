@@ -1,5 +1,5 @@
 
-import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry, WorkerInfo, StartRequest, StopRequest } from './types';
+import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry, WorkerInfo, StartRequest, StopRequest, StatusResponse } from './types';
 
 export const API_BASE = 'http://localhost:3124';
 
@@ -83,9 +83,9 @@ export const api = {
     return res.json();
   },
 
-  async getWorkers(): Promise<WorkerInfo[]> {
+  async getWorkers(): Promise<StatusResponse> {
     const res = await fetch(`${API_BASE}/workers/status`);
-    if (!res.ok) return [];
+    if (!res.ok) return { workers: [], queue_len: 0, failed_count: 0 };
     return res.json();
   },
 

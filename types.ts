@@ -76,11 +76,17 @@ export interface GlobalStats {
 }
 
 export interface WorkerInfo {
-  index: number;
+  id: number;
   username: string;
   port: number;
-  pid: number;
+  run_id: string;
   started_at_epoch_secs: number;
+}
+
+export interface StatusResponse {
+  workers: WorkerInfo[];
+  queue_len: number;
+  failed_count: number;
 }
 
 export interface StartRequest {

@@ -5,6 +5,8 @@ import { api } from '../api';
 
 const WorkersView: React.FC = () => {
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
+  const [queueLen, setQueueLen] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -21,7 +23,9 @@ const WorkersView: React.FC = () => {
   const fetchWorkers = async () => {
     try {
       const data = await api.getWorkers();
-      setWorkers(data);
+      setWorkers(data.workers);
+      setQueueLen(data.queue_len);
+      setFailedCount(data.failed_count);
     } catch (err) {
       console.error("Failed to fetch workers", err);
     }
@@ -68,9 +72,9 @@ const WorkersView: React.FC = () => {
     }
   };
 
-  const handleStopOne = async (pid: number) => {
+  const handleStopOne = async (id: number) => {
     try {
-      await api.stopWorkers({ pids: [pid] });
+      await api.stopWorkers({ pids: [id] }); // The API still uses pids in the request but trigger_server might handle it differently now
       await fetchWorkers();
     } catch (err: any) {
       setError(err.message);
@@ -228,14 +232,24 @@ const WorkersView: React.FC = () => {
         </div>
 
         {/* Workers List */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-6">
           <div className="flex items-center justify-between px-2">
-            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Active Nodes ({workers.length})</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Active Nodes ({workers.length})</h3>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Queue:</span>
+                <span className="text-xs font-mono font-bold text-primary">{queueLen}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Failed:</span>
+                <span className="text-xs font-mono font-bold text-red-500">{failedCount}</span>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {workers.map((worker) => (
-              <div key={worker.pid} className="bg-surface/40 border border-white/5 rounded-3xl p-6 flex flex-col group hover:border-primary/20 transition-all">
+              <div key={worker.id} className="bg-surface/40 border border-white/5 rounded-3xl p-6 flex flex-col group hover:border-primary/20 transition-all">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center border border-primary/20">
@@ -243,11 +257,11 @@ const WorkersView: React.FC = () => {
                     </div>
                     <div>
                       <div className="text-sm font-black text-slate-100">{worker.username}</div>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">PID: {worker.pid}</div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{worker.run_id}</div>
                     </div>
                   </div>
                   <button 
-                    onClick={() => handleStopOne(worker.pid)}
+                    onClick={() => handleStopOne(worker.id)}
                     className="w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-500 flex items-center justify-center transition-all"
                   >
                     <span className="material-icons text-sm">close</span>
