@@ -15,11 +15,13 @@ import TrackRow from './components/TrackRow';
 import GlobalFooter from './components/GlobalFooter';
 import SimilarityModal from './components/SimilarityModal';
 import WorkersView from './components/WorkersView';
+import PlaylistsView from './components/PlaylistsView';
 
 type View = 'dashboard' | 'playlists' | 'downloads' | 'rejected' | 'history' | 'settings' | 'logs' | 'workers';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [network, setNetwork] = useState<NetworkStats | null>(null);
@@ -54,6 +56,7 @@ const App: React.FC = () => {
         setNetwork(n);
         
         const p = await api.getPlaylists();
+        setPlaylists(p);
         const l = await api.getLogs();
         setLogs(l);
 
@@ -85,10 +88,11 @@ const App: React.FC = () => {
 
   const loadDashboardData = async () => {
     try {
-      const [s, n, l] = await Promise.all([api.getStats(), api.getNetwork(), api.getLogs()]);
+      const [s, n, l, p] = await Promise.all([api.getStats(), api.getNetwork(), api.getLogs(), api.getPlaylists()]);
       setStats(s);
       setNetwork(n);
       setLogs(l);
+      setPlaylists(p);
       if (activePlaylist) {
         const detailed = await api.getPlaylist(activePlaylist.id);
         setActivePlaylist(detailed);
@@ -118,6 +122,13 @@ const App: React.FC = () => {
   const handleTrackClick = (track: Track) => {
     setSelectedTrack(track);
     setIsModalOpen(true);
+  };
+
+  const handleManualPlaylistStart = (id: string) => {
+    setCurrentView('workers');
+    // We can't easily pass state to WorkersView without a store or prop drilling, 
+    // but we can at least switch the view. 
+    // In a real app we might use a context or URL params.
   };
 
   if (isBooting) {
@@ -178,8 +189,12 @@ const App: React.FC = () => {
           <div className="max-w-7xl mx-auto">
             {currentView === 'logs' ? (
               <div className="space-y-4">
-                <h2 className="text-3xl font-black mb-1 tracking-tighter uppercase">Live System Telemetry</h2>
-                <div className="bg-black/40 border border-white/5 rounded-3xl p-6 font-mono text-[11px] overflow-hidden min-h-[60vh] flex flex-col">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Live Telemetry</span>
+                </div>
+                <h2 className="text-5xl font-black mb-1 tracking-tighter italic font-serif">System Logs</h2>
+                <div className="bg-black/40 border border-white/5 rounded-3xl p-6 font-mono text-[11px] overflow-hidden min-h-[60vh] flex flex-col backdrop-blur-sm">
                    <div className="flex-1 overflow-y-auto space-y-1 custom-scrollbar">
                       {logs.map((log) => (
                         <div key={log.id} className="flex gap-4 hover:bg-white/5 px-2 py-1 rounded transition-colors group">
@@ -199,21 +214,35 @@ const App: React.FC = () => {
               </div>
             ) : currentView === 'workers' ? (
               <WorkersView />
+            ) : currentView === 'playlists' ? (
+              <PlaylistsView 
+                playlists={playlists}
+                activePlaylist={activePlaylist}
+                onSelect={(p) => {
+                  setActivePlaylist(p);
+                  setCurrentView('dashboard');
+                }}
+                onManualStart={handleManualPlaylistStart}
+              />
             ) : (
               <>
-                <div className="flex items-end justify-between mb-8">
+                <div className="flex items-end justify-between mb-12 border-b border-white/5 pb-8">
                   <div>
-                    <h2 className="text-3xl font-black mb-1 capitalize tracking-tighter">{currentView}</h2>
-                    <p className="text-slate-500 font-medium max-w-lg">
-                      {currentView === 'dashboard' ? 'Correlating local database records with live Soulseek telemetry.' : 
-                       currentView === 'downloads' ? 'Active download queue with real-time progress mapping.' :
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 rounded-full bg-primary"></div>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Active View</span>
+                    </div>
+                    <h2 className="text-5xl font-black mb-1 capitalize tracking-tighter italic font-serif">{currentView}</h2>
+                    <p className="text-slate-500 font-medium max-w-lg text-sm">
+                      {currentView === 'dashboard' ? 'Correlating local database records with live Soulseek telemetry and Jaeger traces.' : 
+                       currentView === 'downloads' ? 'Active download queue with real-time progress mapping from Redis.' :
                        currentView === 'rejected' ? 'Tracks flagged as incompatible or missing high-fidelity candidates.' :
-                       'Past activity log.'}
+                       'Past activity log and historical synchronization data.'}
                     </p>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {filteredTracks.length > 0 ? (
                     filteredTracks.map(track => (
                       <TrackRow 
@@ -223,10 +252,12 @@ const App: React.FC = () => {
                       />
                     ))
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-white/5 rounded-3xl bg-surface/5">
-                      <span className="material-icons text-6xl text-slate-800 mb-6">database_off</span>
-                      <h3 className="text-xl font-bold text-slate-400 mb-2">No Records Found</h3>
-                      <p className="text-slate-600 text-sm mb-8 text-center max-w-sm">
+                    <div className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-white/5 rounded-[3rem] bg-surface/5">
+                      <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-8 border border-white/10">
+                        <span className="material-icons text-4xl text-slate-700">database_off</span>
+                      </div>
+                      <h3 className="text-2xl font-black text-slate-400 mb-2 tracking-tight">No Records Found</h3>
+                      <p className="text-slate-600 text-sm mb-12 text-center max-w-sm font-medium leading-relaxed">
                         The DB bridge is connected, but the current filter returned 0 results. 
                         Check your Diagnostics for table statistics.
                       </p>
@@ -234,9 +265,9 @@ const App: React.FC = () => {
                       {stats && (
                         <div className="grid grid-cols-2 gap-4 w-full max-w-md">
                            {Object.entries(stats.tableCounts).map(([table, count]) => (
-                             <div key={table} className="bg-surface/50 border border-white/5 p-4 rounded-2xl flex justify-between items-center">
-                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{table}</span>
-                                <span className="font-mono font-bold text-primary">{count}</span>
+                             <div key={table} className="bg-surface/50 border border-white/5 p-5 rounded-3xl flex justify-between items-center group hover:border-primary/20 transition-all">
+                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest group-hover:text-primary transition-colors">{table}</span>
+                                <span className="font-mono font-bold text-primary text-lg">{count}</span>
                              </div>
                            ))}
                         </div>

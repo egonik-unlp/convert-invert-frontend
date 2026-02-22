@@ -13,6 +13,8 @@ const WorkersView: React.FC = () => {
   const [usernamePrefix, setUsernamePrefix] = useState('worker');
   const [portBase, setPortBase] = useState(41000);
   const [runIdPrefix, setRunIdPrefix] = useState('web-trigger');
+  const [playlistId, setPlaylistId] = useState('');
+  const [chunkSize, setChunkSize] = useState<number | undefined>(undefined);
   const [rangeStart, setRangeStart] = useState<number | undefined>(undefined);
   const [rangeEnd, setRangeEnd] = useState<number | undefined>(undefined);
 
@@ -40,6 +42,8 @@ const WorkersView: React.FC = () => {
         username_prefix: usernamePrefix,
         port_base: portBase,
         run_id_prefix: runIdPrefix,
+        playlist_id: playlistId || undefined,
+        chunk_size: chunkSize,
         playlist_range_start: rangeStart,
         playlist_range_end: rangeEnd
       };
@@ -75,11 +79,15 @@ const WorkersView: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="flex items-end justify-between">
+      <div className="flex items-end justify-between border-b border-white/5 pb-8">
         <div>
-          <h2 className="text-3xl font-black mb-1 capitalize tracking-tighter">Distributed Workers</h2>
-          <p className="text-slate-500 font-medium max-w-lg">
-            Manage parallel synchronization nodes. Each worker operates as an independent Soulseek client.
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Cluster Management</span>
+          </div>
+          <h2 className="text-5xl font-black mb-1 capitalize tracking-tighter italic font-serif">Distributed Workers</h2>
+          <p className="text-slate-500 font-medium max-w-lg text-sm">
+            Orchestrate parallel synchronization nodes. Each worker operates as an independent Soulseek client with its own identity and port.
           </p>
         </div>
         <div className="flex gap-3">
@@ -106,74 +114,98 @@ const WorkersView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Control Panel */}
-        <div className="bg-surface/30 border border-white/5 rounded-3xl p-8 space-y-6">
-          <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Deployment Config</h3>
+        <div className="bg-surface/30 border border-white/5 rounded-3xl p-8 space-y-8 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Deployment Config</h3>
+            <span className="text-[10px] font-mono text-slate-600">v2.1.0-STABLE</span>
+          </div>
           
-          <div className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Worker Count</label>
-              <input 
-                type="number" 
-                value={workerCount}
-                onChange={(e) => setWorkerCount(parseInt(e.target.value))}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Username Prefix</label>
-              <input 
-                type="text" 
-                value={usernamePrefix}
-                onChange={(e) => setUsernamePrefix(e.target.value)}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Port Base</label>
-              <input 
-                type="number" 
-                value={portBase}
-                onChange={(e) => setPortBase(parseInt(e.target.value))}
-                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all"
-              />
-            </div>
-            
-            <div className="pt-4 border-t border-white/5">
-              <div className="flex items-center justify-between mb-4">
-                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Partitioning</h4>
-                <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-primary/10 border-primary/30 text-primary">
-                  <span className="material-icons text-[12px]">auto_awesome</span>
-                  <span className="text-[9px] font-black uppercase tracking-widest">Automatic</span>
-                </div>
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Worker Count</label>
+                <input 
+                  type="number" 
+                  value={workerCount}
+                  onChange={(e) => setWorkerCount(parseInt(e.target.value))}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all font-mono"
+                />
               </div>
-              <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl">
-                <p className="text-[10px] text-primary/70 font-medium leading-relaxed">
-                  Workload is automatically distributed across all active nodes. If a range is specified, it will be sub-divided among workers.
-                </p>
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Port Base</label>
+                <input 
+                  type="number" 
+                  value={portBase}
+                  onChange={(e) => setPortBase(parseInt(e.target.value))}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all font-mono"
+                />
               </div>
             </div>
 
-            <div className="pt-2">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Range Filter</h4>
+            <div>
+              <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Target Playlist ID</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 material-icons text-slate-600 text-sm">link</span>
+                <input 
+                  type="text" 
+                  placeholder="Spotify/YT Playlist URL or ID"
+                  value={playlistId}
+                  onChange={(e) => setPlaylistId(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Username Prefix</label>
+                <input 
+                  type="text" 
+                  value={usernamePrefix}
+                  onChange={(e) => setUsernamePrefix(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2">Chunk Size</label>
+                <input 
+                  type="number" 
+                  placeholder="Default (15)"
+                  value={chunkSize ?? ''}
+                  onChange={(e) => setChunkSize(e.target.value ? parseInt(e.target.value) : undefined)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 focus:border-primary/50 outline-none transition-all font-mono"
+                />
+              </div>
+            </div>
+            
+            <div className="pt-6 border-t border-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Partitioning Strategy</h4>
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-primary/10 border-primary/30 text-primary">
+                  <span className="material-icons text-[12px]">auto_awesome</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Dynamic</span>
+                </div>
+              </div>
+              
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Start Index</label>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-2">Range Start</label>
                   <input 
                     type="number" 
-                    placeholder="None"
+                    placeholder="0"
                     value={rangeStart ?? ''}
                     onChange={(e) => setRangeStart(e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-slate-200 outline-none"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 outline-none font-mono"
                   />
                 </div>
                 <div>
-                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">End Index</label>
+                  <label className="block text-[9px] font-bold text-slate-500 uppercase mb-2">Range End</label>
                   <input 
                     type="number" 
-                    placeholder="None"
+                    placeholder="End"
                     value={rangeEnd ?? ''}
                     onChange={(e) => setRangeEnd(e.target.value ? parseInt(e.target.value) : undefined)}
-                    className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-slate-200 outline-none"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-sm font-bold text-slate-200 outline-none font-mono"
                   />
                 </div>
               </div>

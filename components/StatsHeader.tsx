@@ -8,44 +8,59 @@ interface StatsHeaderProps {
 
 const StatsHeader: React.FC<StatsHeaderProps> = ({ stats }) => {
   return (
-    <header className="h-20 border-b border-primary/10 flex items-center justify-between px-8 bg-background-dark/30 backdrop-blur-md z-10 shrink-0">
-      <div className="flex items-center gap-8">
+    <header className="h-24 border-b border-white/5 flex items-center justify-between px-12 bg-background-dark/50 backdrop-blur-xl z-20 shrink-0">
+      <div className="flex items-center gap-12">
         <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Tracks</span>
-          <span className="text-2xl font-bold">{stats.totalTracks}</span>
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Library Index</span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-3xl font-black italic font-serif">{stats.totalTracks}</span>
+            <span className="text-[10px] font-bold text-slate-600 uppercase">Items</span>
+          </div>
         </div>
-        <div className="h-8 w-px bg-primary/20"></div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Pending</span>
-          <span className="text-2xl font-bold text-slate-400">{stats.pending}</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Downloading</span>
-          <span className="text-2xl font-bold text-primary">{stats.downloading}</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Completed</span>
-          <span className="text-2xl font-bold text-primary/80">{stats.completed}</span>
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Rejected</span>
-          <span className="text-2xl font-bold text-red-500">{stats.failed}</span>
+        
+        <div className="h-10 w-[1px] bg-white/5"></div>
+
+        <div className="flex items-center gap-10">
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Queue</span>
+            <span className="text-xl font-black font-mono text-slate-400">{stats.pending}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black text-primary uppercase tracking-[0.2em] mb-1">Active</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black font-mono text-primary">{stats.downloading}</span>
+              {stats.downloading > 0 && <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>}
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Synced</span>
+            <span className="text-xl font-black font-mono text-slate-200">{stats.completed}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[9px] font-black text-red-500/60 uppercase tracking-[0.2em] mb-1">Rejected</span>
+            <span className="text-xl font-black font-mono text-red-500/80">{stats.failed}</span>
+          </div>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-6">
         <div className="relative group">
-          <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm group-focus-within:text-primary transition-colors">search</span>
+          <span className="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 text-sm group-focus-within:text-primary transition-colors">search</span>
           <input 
-            className="bg-background-dark/50 border border-primary/10 rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-1 focus:ring-primary focus:border-primary outline-none w-64 transition-all" 
-            placeholder="Search tracks..." 
+            className="bg-black/40 border border-white/10 rounded-2xl pl-11 pr-4 py-2.5 text-xs font-bold text-slate-300 focus:border-primary/50 outline-none w-72 transition-all placeholder:text-slate-700" 
+            placeholder="Search Global Index..." 
             type="text"
           />
         </div>
-        <button className="bg-primary hover:bg-primary/90 text-background-dark font-bold px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-all shadow-[0_4px_12px_rgba(19,236,91,0.2)]">
-          <span className="material-icons text-sm">add</span>
-          Sync New
-        </button>
+        <div className="flex flex-col items-end">
+          <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Global Progress</span>
+          <div className="flex items-center gap-3">
+             <div className="w-32 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-primary shadow-[0_0_10px_rgba(19,236,91,0.5)] transition-all duration-1000" style={{ width: `${stats.globalProgress}%` }}></div>
+             </div>
+             <span className="text-xs font-black font-mono text-primary">{stats.globalProgress}%</span>
+          </div>
+        </div>
       </div>
     </header>
   );

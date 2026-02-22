@@ -88,6 +88,8 @@ export interface StartRequest {
   username_prefix?: string;
   port_base?: number;
   run_id_prefix?: string;
+  playlist_id?: string;
+  chunk_size?: number;
   playlist_range_start?: number;
   playlist_range_end?: number;
 }
