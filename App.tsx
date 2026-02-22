@@ -14,8 +14,9 @@ import StatsHeader from './components/StatsHeader';
 import TrackRow from './components/TrackRow';
 import GlobalFooter from './components/GlobalFooter';
 import SimilarityModal from './components/SimilarityModal';
+import WorkersView from './components/WorkersView';
 
-type View = 'dashboard' | 'playlists' | 'downloads' | 'rejected' | 'history' | 'settings' | 'logs';
+type View = 'dashboard' | 'playlists' | 'downloads' | 'rejected' | 'history' | 'settings' | 'logs' | 'workers';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>('dashboard');
@@ -187,6 +188,8 @@ const App: React.FC = () => {
                    </div>
                 </div>
               </div>
+            ) : currentView === 'workers' ? (
+              <WorkersView />
             ) : (
               <>
                 <div className="flex items-end justify-between mb-8">

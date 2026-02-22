@@ -247,4 +247,45 @@ app.get('/network', async (req, res) => {
   res.json({ status: 'CONNECTED', user: 'egonik', latency: '0ms', node: 'Soulseek-Native', totalBandwidth: 'Live' });
 });
 
+// Trigger Server Proxy
+const TRIGGER_URL = process.env.TRIGGER_URL || 'http://localhost:8081';
+
+app.get('/workers/status', async (req, res) => {
+  try {
+    const response = await fetch(`${TRIGGER_URL}/status`);
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Trigger server unreachable' });
+  }
+});
+
+app.post('/workers/start', async (req, res) => {
+  try {
+    const response = await fetch(`${TRIGGER_URL}/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Trigger server unreachable' });
+  }
+});
+
+app.post('/workers/stop', async (req, res) => {
+  try {
+    const response = await fetch(`${TRIGGER_URL}/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Trigger server unreachable' });
+  }
+});
+
 app.listen(port, () => console.log(`SyncDash Bridge live at http://localhost:${port}`));

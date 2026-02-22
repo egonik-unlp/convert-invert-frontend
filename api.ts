@@ -1,5 +1,5 @@
 
-import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry } from './types';
+import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry, WorkerInfo, StartRequest, StopRequest } from './types';
 
 export const API_BASE = 'http://localhost:3124';
 
@@ -68,5 +68,29 @@ export const api = {
     const res = await fetch(`${API_BASE}/logs`);
     if (!res.ok) return [];
     return res.json();
+  },
+
+  async getWorkers(): Promise<WorkerInfo[]> {
+    const res = await fetch(`${API_BASE}/workers/status`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async startWorkers(req: StartRequest): Promise<WorkerInfo[]> {
+    const res = await fetch(`${API_BASE}/workers/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    return handleResponse(res, "Failed to start workers");
+  },
+
+  async stopWorkers(req: StopRequest): Promise<number[]> {
+    const res = await fetch(`${API_BASE}/workers/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    return handleResponse(res, "Failed to stop workers");
   }
 };

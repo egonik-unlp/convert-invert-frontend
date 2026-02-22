@@ -12,6 +12,7 @@ const Sidebar: React.FC<SidebarProps> = ({ network, currentView, onViewChange })
   const navItems = [
     { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
     { id: 'playlists', icon: 'queue_music', label: 'Playlists' },
+    { id: 'workers', icon: 'hub', label: 'Workers' },
     { id: 'downloads', icon: 'download', label: 'Downloads' },
     { id: 'rejected', icon: 'block', label: 'Rejected' },
     { id: 'history', icon: 'history', label: 'History' },
