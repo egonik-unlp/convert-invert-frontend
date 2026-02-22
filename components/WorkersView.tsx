@@ -13,9 +13,6 @@ const WorkersView: React.FC = () => {
   const [usernamePrefix, setUsernamePrefix] = useState('worker');
   const [portBase, setPortBase] = useState(41000);
   const [runIdPrefix, setRunIdPrefix] = useState('web-trigger');
-  const [isAutoPartition, setIsAutoPartition] = useState(true);
-  const [playlistParts, setPlaylistParts] = useState<number | undefined>(undefined);
-  const [playlistPartOffset, setPlaylistPartOffset] = useState(0);
   const [rangeStart, setRangeStart] = useState<number | undefined>(undefined);
   const [rangeEnd, setRangeEnd] = useState<number | undefined>(undefined);
 
@@ -43,8 +40,6 @@ const WorkersView: React.FC = () => {
         username_prefix: usernamePrefix,
         port_base: portBase,
         run_id_prefix: runIdPrefix,
-        playlist_parts: isAutoPartition ? undefined : playlistParts,
-        playlist_part_offset: isAutoPartition ? 0 : playlistPartOffset,
         playlist_range_start: rangeStart,
         playlist_range_end: rangeEnd
       };
@@ -135,50 +130,16 @@ const WorkersView: React.FC = () => {
             <div className="pt-4 border-t border-white/5">
               <div className="flex items-center justify-between mb-4">
                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Partitioning</h4>
-                <button 
-                  onClick={() => setIsAutoPartition(!isAutoPartition)}
-                  className={`flex items-center gap-2 px-3 py-1 rounded-full border transition-all ${
-                    isAutoPartition 
-                      ? 'bg-primary/10 border-primary/30 text-primary' 
-                      : 'bg-white/5 border-white/10 text-slate-500'
-                  }`}
-                >
-                  <span className="material-icons text-[12px]">{isAutoPartition ? 'auto_awesome' : 'tune'}</span>
-                  <span className="text-[9px] font-black uppercase tracking-widest">{isAutoPartition ? 'Auto' : 'Manual'}</span>
-                </button>
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-primary/10 border-primary/30 text-primary">
+                  <span className="material-icons text-[12px]">auto_awesome</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest">Automatic</span>
+                </div>
               </div>
-
-              {!isAutoPartition && (
-                <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <div>
-                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Total Parts</label>
-                    <input 
-                      type="number" 
-                      placeholder="Auto"
-                      value={playlistParts || ''}
-                      onChange={(e) => setPlaylistParts(e.target.value ? parseInt(e.target.value) : undefined)}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-slate-200 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[9px] font-bold text-slate-500 uppercase mb-1">Part Offset</label>
-                    <input 
-                      type="number" 
-                      value={playlistPartOffset}
-                      onChange={(e) => setPlaylistPartOffset(parseInt(e.target.value))}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2 text-xs font-bold text-slate-200 outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-              
-              {isAutoPartition && (
-                <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl">
-                  <p className="text-[10px] text-primary/70 font-medium leading-relaxed">
-                    Workload will be automatically distributed across {workerCount} nodes.
-                  </p>
-                </div>
-              )}
+              <div className="p-4 bg-primary/5 border border-primary/10 rounded-2xl">
+                <p className="text-[10px] text-primary/70 font-medium leading-relaxed">
+                  Workload is automatically distributed across all active nodes. If a range is specified, it will be sub-divided among workers.
+                </p>
+              </div>
             </div>
 
             <div className="pt-2">
