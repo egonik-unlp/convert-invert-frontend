@@ -9,13 +9,13 @@ const app = express();
 const port = 3124; 
 
 // Database configuration
-const dbConnectionString = 'postgresql://postgres:postgres@localhost:5455/convert-invert';
+const dbConnectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5455/convert-invert';
 const pool = new Pool({
   connectionString: dbConnectionString,
 });
 
 // Redis configuration
-const redis = new Redis('redis://localhost:6379');
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 app.use(cors());
 app.use(express.json());
@@ -24,7 +24,8 @@ app.use(express.json());
 let redisProgressMap = new Map(); // track_id -> { progress: number, finished: boolean }
 let systemLogs = [];
 
-const JAEGER_API = 'http://localhost:16686/api/traces';
+const JAEGER_URL = process.env.JAEGER_URL || 'http://localhost:16686';
+const JAEGER_API = `${JAEGER_URL}/api/traces`;
 
 /**
  * Fetches latest spans from Jaeger and converts them to system logs
