@@ -74,3 +74,22 @@ export interface GlobalStats {
   remainingTime: string;
   tableCounts: Record<string, number>;
 }
+
+export interface WorkerInfo {
+  id: number;
+  username: string;
+  port: number;
+  run_id: string;
+  started_at_epoch_secs: number;
+}
+
+export interface StartRequest {
+  worker_count?: number;
+  username_prefix?: string;
+  port_base?: number;
+  run_id_prefix?: string;
+  playlist_id?: string;
+  chunk_size?: number;
+  playlist_range_start?: number;
+  playlist_range_end?: number;
+}

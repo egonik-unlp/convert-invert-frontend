@@ -1,7 +1,7 @@
 
-import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry } from './types';
+import { GlobalStats, NetworkStats, Playlist, Track, Candidate, LogEntry, WorkerInfo, StartRequest } from './types';
 
-export const API_BASE = 'http://localhost:3124';
+export const API_BASE = 'http://localhost:3124/api';
 
 export interface HealthStatus {
   api: string;
@@ -68,5 +68,28 @@ export const api = {
     const res = await fetch(`${API_BASE}/logs`);
     if (!res.ok) return [];
     return res.json();
+  },
+
+  async getWorkers(): Promise<{ workers: WorkerInfo[], queue_len: number, failed_count: number }> {
+    const res = await fetch(`${API_BASE}/workers/status`);
+    return handleResponse(res, "Workers unavailable");
+  },
+
+  async startWorkers(req: StartRequest): Promise<WorkerInfo[]> {
+    const res = await fetch(`${API_BASE}/workers/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    return handleResponse(res, "Failed to start workers");
+  },
+
+  async stopWorkers(req: { pids?: number[] }): Promise<number[]> {
+    const res = await fetch(`${API_BASE}/workers/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req)
+    });
+    return handleResponse(res, "Failed to stop workers");
   }
 };
