@@ -1,6 +1,8 @@
-
-import React from 'react';
-import { NetworkStats } from '../types';
+import { BarChart3, Download, History, ListMusic, Radio, Settings, ShieldX, Terminal, Waves } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { NetworkStats } from "@/types";
+import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   network: NetworkStats;
@@ -8,68 +10,74 @@ interface SidebarProps {
   onViewChange: (view: any) => void;
 }
 
+const navItems = [
+  { id: "dashboard", icon: BarChart3, label: "Dashboard" },
+  { id: "playlists", icon: ListMusic, label: "Playlists" },
+  { id: "downloads", icon: Download, label: "Downloads" },
+  { id: "rejected", icon: ShieldX, label: "Rejected" },
+  { id: "history", icon: History, label: "History" },
+  { id: "logs", icon: Terminal, label: "System Logs" },
+  { id: "settings", icon: Settings, label: "Diagnostics" },
+];
+
 const Sidebar: React.FC<SidebarProps> = ({ network, currentView, onViewChange }) => {
-  const navItems = [
-    { id: 'dashboard', icon: 'dashboard', label: 'Dashboard' },
-    { id: 'playlists', icon: 'queue_music', label: 'Playlists' },
-    { id: 'downloads', icon: 'download', label: 'Downloads' },
-    { id: 'rejected', icon: 'block', label: 'Rejected' },
-    { id: 'history', icon: 'history', label: 'History' },
-    { id: 'logs', icon: 'terminal', label: 'System Logs' },
-  ];
-
   return (
-    <aside className="w-64 border-r border-primary/10 bg-background-dark/80 flex flex-col z-20">
-      <div className="p-8 flex items-center gap-4">
-        <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(19,236,91,0.25)]">
-          <span className="material-icons text-background-dark font-black">sync</span>
-        </div>
-        <h1 className="text-xl font-black tracking-tighter text-slate-100">SyncDash</h1>
-      </div>
-
-      <nav className="flex-1 px-4 space-y-1.5 py-4">
-        {navItems.map(item => (
-          <button
-            key={item.id}
-            onClick={() => onViewChange(item.id)}
-            className={`w-full flex items-center gap-4 px-5 py-3.5 rounded-xl transition-all duration-300 group ${
-              currentView === item.id
-                ? 'bg-primary/10 text-primary active-glow' 
-                : 'text-slate-500 hover:bg-white/5 hover:text-slate-200'
-            }`}
-          >
-            <span className={`material-icons text-[20px] transition-transform ${currentView === item.id ? 'scale-110' : 'group-hover:scale-110'}`}>
-              {item.icon}
-            </span>
-            <span className="font-bold text-sm tracking-tight">{item.label}</span>
-          </button>
-        ))}
-
-        <div className="pt-8 pb-4 px-6 text-[10px] font-black text-slate-700 uppercase tracking-[0.2em]">
-          Engine System
-        </div>
-        <button 
-          onClick={() => onViewChange('settings')}
-          className={`w-full flex items-center gap-4 px-5 py-3.5 rounded-xl transition-all ${
-            currentView === 'settings' ? 'bg-primary/10 text-primary' : 'text-slate-500 hover:bg-white/5'
-          }`}
-        >
-          <span className="material-icons text-[20px]">settings</span>
-          <span className="font-bold text-sm">Diagnostics</span>
-        </button>
-      </nav>
-
-      <div className="p-4 mt-auto">
-        <div className="bg-surface/50 rounded-2xl p-5 border border-primary/5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className={`w-2 h-2 rounded-full ${network.status === 'CONNECTED' ? 'bg-primary animate-pulse' : 'bg-red-500'}`}></div>
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Soulseek Status</span>
+    <TooltipProvider>
+      <aside className="flex w-16 shrink-0 flex-col border-r bg-card/70 md:w-64">
+        <div className="flex h-16 items-center gap-3 border-b px-3 md:px-5">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Waves className="h-5 w-5" aria-hidden="true" />
           </div>
-          <p className="text-[10px] text-slate-500 font-medium">Session: <span className="text-slate-200">{network.user}</span></p>
-          <div className="mt-2 text-[11px] text-primary font-mono font-bold tracking-tight">{network.node}</div>
+          <div className="hidden md:block">
+            <h1 className="text-base font-semibold leading-none">SyncDash</h1>
+            <p className="mt-1 text-xs text-muted-foreground">Convert Invert</p>
+          </div>
         </div>
-      </div>
-    </aside>
+
+        <nav aria-label="Primary" className="flex-1 space-y-1 p-2 md:p-3">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = currentView === item.id;
+            const button = (
+              <Button
+                key={item.id}
+                variant="ghost"
+                className={cn(
+                  "w-full justify-center md:justify-start",
+                  active && "bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary",
+                )}
+                aria-label={item.label}
+                onClick={() => onViewChange(item.id)}
+              >
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden md:inline">{item.label}</span>
+              </Button>
+            );
+
+            return (
+              <Tooltip key={item.id}>
+                <TooltipTrigger asChild>{button}</TooltipTrigger>
+                <TooltipContent side="right" className="md:hidden">{item.label}</TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </nav>
+
+        <div className="border-t p-3">
+          <div className="hidden rounded-lg border bg-background/40 p-4 md:block">
+            <div className="flex items-center gap-2">
+              <span className={cn("h-2 w-2 rounded-full", network.status === "CONNECTED" ? "bg-emerald-400" : "bg-destructive")} />
+              <span className="text-xs font-medium">Soulseek</span>
+            </div>
+            <p className="mt-3 truncate text-xs text-muted-foreground">Session: {network.user}</p>
+            <p className="mt-1 truncate font-mono text-xs text-primary">{network.node}</p>
+          </div>
+          <div className="flex justify-center md:hidden">
+            <Radio className={cn("h-4 w-4", network.status === "CONNECTED" ? "text-emerald-400" : "text-destructive")} aria-label={network.status} />
+          </div>
+        </div>
+      </aside>
+    </TooltipProvider>
   );
 };
 

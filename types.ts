@@ -35,7 +35,7 @@ export interface Track {
   title: string;
   artist: string;
   album: string;
-  status: TrackStatus | 'FINALIZING';
+  status: TrackStatus;
   progress: number;
   score?: number;
   candidatesCount: number;
@@ -54,6 +54,7 @@ export interface Playlist {
   lastSynced: string;
   coverArt: string;
   tracks: Track[];
+  nextCursor?: number;
 }
 
 export interface NetworkStats {
@@ -93,3 +94,10 @@ export interface StartRequest {
   playlist_range_start?: number;
   playlist_range_end?: number;
 }
+
+export interface DownloadedFile {
+  name: string;
+  size: number;
+  modified: number;
+}
+

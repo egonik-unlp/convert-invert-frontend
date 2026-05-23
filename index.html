@@ -5,72 +5,42 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SyncDash</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            "primary": "#13ec5b",
-            "background-light": "#f6f8f6",
-            "background-dark": "#102216",
-            "surface": "#1a2e20",
-            "surface-light": "#243a2b"
-          },
-          fontFamily: {
-            sans: ['Inter', 'sans-serif'],
-          }
-        }
-      }
-    }
-  </script>
-  <style>
-    body {
-      background-color: #102216;
-      color: #f1f5f9;
-      margin: 0;
-      overflow: hidden;
-    }
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: #102216;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background-color: #13ec5b;
-      border-radius: 20px;
-    }
-    .active-glow {
-      box-shadow: 0 0 20px rgba(19, 236, 91, 0.1);
-    }
-    #root {
-      height: 100vh;
-      width: 100vw;
-    }
-  </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@^19.2.4",
-    "react-dom": "https://esm.sh/react-dom@^19.2.4",
-    "react-dom/client": "https://esm.sh/react-dom@^19.2.4/client",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "cors": "https://esm.sh/cors@^2.8.6",
-    "os": "https://esm.sh/os@^0.1.2",
-    "express": "https://esm.sh/express@^5.2.1",
-    "pg": "https://esm.sh/pg@^8.18.0",
-    "ioredis": "https://esm.sh/ioredis@^5.5.0"
-  }
-}
-</script>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div id="boot-fallback" style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#020617;color:#e2e8f0;font-family:Inter,system-ui,sans-serif">
+      <div style="text-align:center">
+        <div style="font-weight:700">SyncDash</div>
+        <div id="boot-status" style="margin-top:8px;color:#94a3b8;font-size:14px">Starting React dashboard...</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var status = document.getElementById('boot-status');
+      if (status) status.textContent = 'Loading React module...';
+      function showBootError(message) {
+        var fallback = document.getElementById('boot-fallback');
+        if (!fallback) return;
+        fallback.innerHTML =
+          '<div style="max-width:720px;padding:24px;text-align:left">' +
+          '<div style="font-weight:700;font-size:18px;margin-bottom:8px">SyncDash could not start</div>' +
+          '<pre style="white-space:pre-wrap;color:#fca5a5;background:#1e1b2e;border:1px solid #7f1d1d;padding:16px;border-radius:8px;font-size:12px;line-height:1.5">' +
+          String(message).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }) +
+          '</pre></div>';
+      }
+      window.addEventListener('error', function (event) {
+        showBootError(event.message || 'Unknown JavaScript error');
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        showBootError((event.reason && (event.reason.stack || event.reason.message)) || event.reason || 'Unhandled promise rejection');
+      });
+      window.__syncDashBooted = function () {
+        var status = document.getElementById('boot-status');
+        if (status) status.textContent = 'React module loaded.';
+      };
+    })();
+  </script>
   <script type="module" src="./index.tsx"></script>
 </body>
 </html>
