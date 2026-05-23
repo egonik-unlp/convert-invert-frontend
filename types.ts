@@ -41,6 +41,7 @@ export interface Track {
   candidatesCount: number;
   username?: string;
   filename?: string;
+  downloadStatus?: string;
   coverArt?: string;
   rejectReason?: string;
 }
@@ -100,4 +101,3 @@ export interface DownloadedFile {
   size: number;
   modified: number;
 }
-

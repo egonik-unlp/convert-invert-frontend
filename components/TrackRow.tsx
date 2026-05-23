@@ -13,7 +13,9 @@ interface TrackRowProps {
 }
 
 const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
-  const { stages, failed, completed, downloading } = useTrackStage(track);
+  const { stages, failed, completed, downloading, finalizing } = useTrackStage(track);
+  const showTransferProgress = downloading || finalizing;
+  const transferLabel = track.downloadStatus?.replace(/_/g, " ") || (finalizing ? "finalizing" : "downloading");
 
   return (
     <TableRow
@@ -31,7 +33,8 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{track.title}</p>
-            <p className="truncate text-xs text-muted-foreground">{track.artist}</p>
+            <p className="truncate text-xs text-muted-foreground">{track.filename || track.artist}</p>
+            {track.username && <p className="truncate text-[11px] text-muted-foreground">Peer: {track.username}</p>}
           </div>
         </div>
       </TableCell>
@@ -47,10 +50,13 @@ const TrackRow: React.FC<TrackRowProps> = ({ track, onClick }) => {
       </TableCell>
 
       <TableCell className="w-44">
-        {downloading ? (
+        {showTransferProgress ? (
           <div className="space-y-2">
             <Progress value={track.progress} />
-            <p className="font-mono text-xs text-muted-foreground">{track.progress}%</p>
+            <div className="flex items-center justify-between gap-2 font-mono text-xs text-muted-foreground">
+              <span>{track.progress}%</span>
+              <span className="truncate capitalize">{transferLabel}</span>
+            </div>
           </div>
         ) : (
           <span className="font-mono text-sm">{track.score ? `${Math.round(track.score * 100)}%` : "--"}</span>

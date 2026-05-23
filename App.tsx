@@ -139,7 +139,7 @@ const Dashboard: React.FC = () => {
     if (!activePlaylist) return [];
     switch (currentView) {
       case "downloads":
-        return activePlaylist.tracks.filter((t) => [TrackStatus.DOWNLOADING, TrackStatus.SEARCHING, TrackStatus.FINALIZING].includes(t.status));
+        return activePlaylist.tracks.filter((t) => [TrackStatus.SEARCHING, TrackStatus.FILTERING, TrackStatus.DOWNLOADING, TrackStatus.FINALIZING].includes(t.status));
       case "rejected":
         return activePlaylist.tracks.filter((t) => t.status === TrackStatus.FAILED);
       case "history":
@@ -162,6 +162,7 @@ const Dashboard: React.FC = () => {
     const workers = await api.startWorkers(request);
     await loadDashboardData();
     setNotice(`Started ${workers.length} worker${workers.length === 1 ? "" : "s"} for playlist ${request.playlist_id}.`);
+    setDownloadsTab("pipeline");
     setCurrentView("downloads");
   };
 
