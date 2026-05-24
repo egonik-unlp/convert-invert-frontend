@@ -44,7 +44,7 @@ export function isLikelySpotifyPlaylistId(id: string): boolean {
 const PlaylistsView: React.FC<PlaylistsViewProps> = ({ playlists, activePlaylist, onSelect, onManualStart }) => {
   const [manualId, setManualId] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [workerCount, setWorkerCount] = useState("4");
+  const [workerCount, setWorkerCount] = useState("1");
   const [chunkSize, setChunkSize] = useState("15");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");

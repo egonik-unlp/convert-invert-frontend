@@ -1,9 +1,10 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { api, AppConfig } from "@/lib/api-client";
+import { api, AppConfig, fallbackTuning } from "@/lib/api-client";
 
 const fallbackConfig: AppConfig = {
   judgeThreshold: 0.75,
   auth: { scheme: "api_key", header: "X-API-Key" },
+  tuning: fallbackTuning,
 };
 
 const AppConfigContext = createContext<AppConfig>(fallbackConfig);

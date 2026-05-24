@@ -6,6 +6,21 @@ const DEFAULT_TIMEOUT_MS = 4000;
 const WORKER_START_TIMEOUT_MS = 120_000;
 const WORKER_START_CONFIRM_ATTEMPTS = 12;
 const WORKER_START_CONFIRM_INTERVAL_MS = 2500;
+export const fallbackTuning: AppConfig["tuning"] = {
+  searchConcurrency: 1,
+  downloadConcurrency: 1,
+  searchTimeoutSecs: 20,
+  searchEmptyResultCutoff: 8,
+  maxCandidatesPerTrack: 3,
+  maxDownloadAttemptsPerTrack: 2,
+  candidateCollectionSecs: 20,
+  maxSearchPassesPerTrack: 2,
+  maxRequestsPerTrack: 8,
+  workerPortRange: "41000-41000",
+  shareMode: "disabled",
+  sharePath: "/downloads",
+  shareStatus: "disabled",
+};
 
 export interface HealthStatus {
   api: string;
@@ -21,6 +36,21 @@ export interface AppConfig {
   auth: {
     scheme: string;
     header: string;
+  };
+  tuning: {
+    searchConcurrency: number;
+    downloadConcurrency: number;
+    searchTimeoutSecs: number;
+    searchEmptyResultCutoff: number;
+    maxCandidatesPerTrack: number;
+    maxDownloadAttemptsPerTrack: number;
+    candidateCollectionSecs: number;
+    maxSearchPassesPerTrack: number;
+    maxRequestsPerTrack: number;
+    workerPortRange: string;
+    shareMode: string;
+    sharePath: string;
+    shareStatus: string;
   };
 }
 
@@ -114,9 +144,14 @@ export const api = {
       return {
         judgeThreshold: 0.75,
         auth: { scheme: "api_key", header: "X-API-Key" },
+        tuning: fallbackTuning,
       };
     }
-    return handleResponse(res, "Config unavailable");
+    const config = await handleResponse(res, "Config unavailable");
+    return {
+      ...config,
+      tuning: { ...fallbackTuning, ...config.tuning },
+    };
   },
 
   async getPlaylists(): Promise<Playlist[]> {

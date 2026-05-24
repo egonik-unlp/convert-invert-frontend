@@ -7,12 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { useAppConfig } from "@/hooks/useAppConfig";
 import { StartRequest, WorkerInfo } from "@/types";
 import { api } from "@/lib/api-client";
 
 const numberOrUndefined = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
 
 const WorkersView: React.FC = () => {
+  const { tuning } = useAppConfig();
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [queueLen, setQueueLen] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
@@ -20,7 +22,7 @@ const WorkersView: React.FC = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [workerCount, setWorkerCount] = useState("4");
+  const [workerCount, setWorkerCount] = useState("1");
   const [usernamePrefix, setUsernamePrefix] = useState("worker");
   const [portBase, setPortBase] = useState("41000");
   const [runIdPrefix, setRunIdPrefix] = useState("web-trigger");
@@ -171,6 +173,57 @@ const WorkersView: React.FC = () => {
                 End
                 <Input type="number" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} placeholder="End" />
               </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 border-t pt-4">
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Search</p>
+                <p className="mt-1 font-mono text-sm">{tuning.searchConcurrency}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Downloads</p>
+                <p className="mt-1 font-mono text-sm">{tuning.downloadConcurrency}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Timeout</p>
+                <p className="mt-1 font-mono text-sm">{tuning.searchTimeoutSecs}s</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Empty Cutoff</p>
+                <p className="mt-1 font-mono text-sm">{tuning.searchEmptyResultCutoff}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Candidates</p>
+                <p className="mt-1 font-mono text-sm">{tuning.maxCandidatesPerTrack}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Attempts</p>
+                <p className="mt-1 font-mono text-sm">{tuning.maxDownloadAttemptsPerTrack}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Search Passes</p>
+                <p className="mt-1 font-mono text-sm">{tuning.maxSearchPassesPerTrack}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Request Cap</p>
+                <p className="mt-1 font-mono text-sm">{tuning.maxRequestsPerTrack}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Collect</p>
+                <p className="mt-1 font-mono text-sm">{tuning.candidateCollectionSecs}s</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Ports</p>
+                <p className="mt-1 truncate font-mono text-sm">{tuning.workerPortRange}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Share</p>
+                <p className="mt-1 truncate font-mono text-sm">{tuning.shareMode}</p>
+              </div>
+              <div className="rounded-lg border bg-background/40 p-3">
+                <p className="text-xs text-muted-foreground">Share Status</p>
+                <p className="mt-1 truncate font-mono text-sm">{tuning.shareStatus}</p>
+              </div>
             </div>
 
             <Button className="w-full" disabled={loading || !playlistId.trim()} onClick={handleStart}>
