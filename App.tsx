@@ -5,6 +5,8 @@ import {
   ListMusic,
   Loader2,
   Menu,
+  Pause,
+  Play,
   RotateCw,
   Terminal,
   Waves,
@@ -104,6 +106,9 @@ function Dashboard() {
   const [downloads, setDownloads] = useState<DownloadedFile[]>([]);
   const [downloadsLoading, setDownloadsLoading] = useState(false);
 
+  const [downloadsPaused, setDownloadsPaused] = useState(false);
+  const [pipelineBusy, setPipelineBusy] = useState(false);
+
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -148,6 +153,25 @@ function Dashboard() {
     setTracks((current) => mergeTracks(current, playlist.tracks ?? []));
     setNextCursor((current) => playlist.nextCursor ?? current);
   }, []);
+
+  const refreshPipeline = useCallback(async () => {
+    const { downloadsPaused: paused } = await api.getPipeline();
+    setDownloadsPaused(paused);
+  }, []);
+
+  const toggleDownloads = useCallback(async () => {
+    setPipelineBusy(true);
+    const next = !downloadsPaused;
+    try {
+      const res = await api.setDownloadsPaused(next);
+      setDownloadsPaused(res.downloadsPaused);
+      toast.success(res.downloadsPaused ? "Downloads paused" : "Downloads resumed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to toggle downloads");
+    } finally {
+      setPipelineBusy(false);
+    }
+  }, [downloadsPaused]);
 
   const loadMore = useCallback(async () => {
     if (nextCursor == null) return;
@@ -203,9 +227,15 @@ function Dashboard() {
       Promise.all([refreshStats(), pollLibrary()])
         .then(() => setStale(false))
         .catch(() => setStale(true));
+    void refreshPipeline();
     const interval = setInterval(tick, POLL_MS);
-    return () => clearInterval(interval);
-  }, [booting, bootError, refreshStats, pollLibrary]);
+    // Pipeline pause state changes rarely; poll it less often than stats/library.
+    const pipelineInterval = setInterval(() => void refreshPipeline().catch(() => {}), POLL_MS * 4);
+    return () => {
+      clearInterval(interval);
+      clearInterval(pipelineInterval);
+    };
+  }, [booting, bootError, refreshStats, pollLibrary, refreshPipeline]);
 
   // Downloads are fetched lazily when their view opens.
   useEffect(() => {
@@ -308,12 +338,41 @@ function Dashboard() {
               />
               {stale ? "Reconnecting" : "Live"}
             </span>
+            <Button
+              variant={downloadsPaused ? "default" : "ghost"}
+              size="icon"
+              onClick={toggleDownloads}
+              disabled={pipelineBusy}
+              aria-label={downloadsPaused ? "Resume downloads" : "Pause downloads"}
+              aria-pressed={downloadsPaused}
+              title={downloadsPaused ? "Resume downloads" : "Pause downloads (manual stop)"}
+            >
+              {pipelineBusy ? (
+                <Loader2 className="h-[1.15rem] w-[1.15rem] animate-spin" aria-hidden />
+              ) : downloadsPaused ? (
+                <Play className="h-[1.15rem] w-[1.15rem]" aria-hidden />
+              ) : (
+                <Pause className="h-[1.15rem] w-[1.15rem]" aria-hidden />
+              )}
+            </Button>
             <Button variant="ghost" size="icon" onClick={manualRefresh} aria-label="Refresh" title="Refresh">
               <RotateCw className="h-[1.15rem] w-[1.15rem]" aria-hidden />
             </Button>
             <ThemeToggle />
           </div>
         </header>
+
+        {downloadsPaused ? (
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-warning/30 bg-warning/10 px-4 py-1.5 text-center text-xs font-medium text-warning">
+            <span className="inline-flex items-center gap-1.5">
+              <Pause className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Downloads paused — workers stay up and in-flight transfers are held (no attempts spent).
+            </span>
+            <button type="button" onClick={toggleDownloads} disabled={pipelineBusy} className="underline underline-offset-2 hover:no-underline disabled:opacity-50">
+              Resume
+            </button>
+          </div>
+        ) : null}
 
         <main className="flex-1 overflow-y-auto scrollbar-thin">
           <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">

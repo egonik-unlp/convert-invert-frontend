@@ -19,6 +19,9 @@ export const fallbackTuning: AppConfig["tuning"] = {
   retryBackoffMs: 1000,
   searchPacingMs: 500,
   peerCooldownSecs: 120,
+  downloadHardTimeoutSecs: 180,
+  downloadQueuedTimeoutSecs: 45,
+  downloadStallTimeoutSecs: 30,
   workerPortRange: "41000-41000",
   shareMode: "disabled",
   sharePath: "/downloads",
@@ -32,6 +35,10 @@ export interface HealthStatus {
   error?: string;
   targetUrl?: string;
   jaeger?: string;
+}
+
+export interface PipelineState {
+  downloadsPaused: boolean;
 }
 
 export interface AppConfig {
@@ -53,6 +60,9 @@ export interface AppConfig {
     retryBackoffMs: number;
     searchPacingMs: number;
     peerCooldownSecs: number;
+    downloadHardTimeoutSecs: number;
+    downloadQueuedTimeoutSecs: number;
+    downloadStallTimeoutSecs: number;
     workerPortRange: string;
     shareMode: string;
     sharePath: string;
@@ -233,5 +243,19 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE}/downloads`, { headers: authHeaders() });
     if (!res.ok) return [];
     return res.json();
+  },
+
+  async getPipeline(): Promise<PipelineState> {
+    const res = await fetchWithTimeout(`${API_BASE}/pipeline`, { headers: authHeaders() });
+    if (!res.ok) return { downloadsPaused: false };
+    return res.json();
+  },
+
+  async setDownloadsPaused(paused: boolean): Promise<PipelineState> {
+    const res = await fetchWithTimeout(`${API_BASE}/pipeline/${paused ? "pause" : "resume"}`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    return handleResponse(res, `Failed to ${paused ? "pause" : "resume"} downloads`);
   },
 };

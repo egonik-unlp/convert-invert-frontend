@@ -108,6 +108,9 @@ export function WorkersView() {
     { label: "Retry backoff", value: `${tuning.retryBackoffMs}ms` },
     { label: "Search pacing", value: `${tuning.searchPacingMs}ms` },
     { label: "Peer cooldown", value: `${tuning.peerCooldownSecs}s` },
+    { label: "DL hard t/o", value: `${tuning.downloadHardTimeoutSecs}s` },
+    { label: "DL queued t/o", value: `${tuning.downloadQueuedTimeoutSecs}s` },
+    { label: "DL stall t/o", value: `${tuning.downloadStallTimeoutSecs}s` },
     { label: "Worker ports", value: tuning.workerPortRange },
     { label: "Share mode", value: tuning.shareMode },
   ];
