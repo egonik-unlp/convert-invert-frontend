@@ -1,12 +1,14 @@
 import { useMemo, useState } from "react";
-import { CircleAlert, Link2, Loader2, Play, Sparkles } from "lucide-react";
+import { CircleAlert, Link2, Loader2, Play, RotateCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { LastRun } from "@/lib/api-client";
 import type { StartRequest } from "@/types";
 
 interface PlaylistsViewProps {
   onLaunch: (request: StartRequest) => Promise<void>;
+  lastRun?: LastRun | null;
 }
 
 export function normalizeSpotifyPlaylistInput(input: string): string {
@@ -36,7 +38,7 @@ export function isLikelySpotifyPlaylistId(id: string): boolean {
 
 const numericValue = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
 
-export function PlaylistsView({ onLaunch }: PlaylistsViewProps) {
+export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const [rawInput, setRawInput] = useState("");
   const [workerCount, setWorkerCount] = useState("1");
   const [chunkSize, setChunkSize] = useState("15");
@@ -53,6 +55,26 @@ export function PlaylistsView({ onLaunch }: PlaylistsViewProps) {
     const start = numericValue(rangeStart);
     const end = numericValue(rangeEnd);
     return start === undefined || end === undefined || start < end;
+  };
+
+  const resume = async () => {
+    if (!lastRun) return;
+    setLaunching(true);
+    setError(null);
+    try {
+      await onLaunch({
+        playlist_id: lastRun.playlistId,
+        worker_count: lastRun.workerCount,
+        chunk_size: lastRun.chunkSize,
+        username_prefix: "worker",
+        port_base: lastRun.portBase,
+        run_id_prefix: "web-trigger",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resume last run");
+    } finally {
+      setLaunching(false);
+    }
   };
 
   const launch = async () => {
@@ -83,6 +105,25 @@ export function PlaylistsView({ onLaunch }: PlaylistsViewProps) {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {lastRun ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <RotateCw className="h-4 w-4 text-primary" aria-hidden />
+              Resume last run
+            </p>
+            <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={lastRun.playlistId}>
+              {lastRun.playlistId} · {lastRun.workerCount} worker{lastRun.workerCount === 1 ? "" : "s"} · chunk {lastRun.chunkSize}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">Already-downloaded tracks are skipped, so this safely continues where it stopped.</p>
+          </div>
+          <Button variant="outline" className="shrink-0" disabled={launching} onClick={() => void resume()}>
+            {launching ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RotateCw className="h-4 w-4" aria-hidden />}
+            Resume
+          </Button>
+        </div>
+      ) : null}
+
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex items-center gap-2 text-sm font-medium text-foreground">
           <Link2 className="h-4 w-4 text-primary" aria-hidden />

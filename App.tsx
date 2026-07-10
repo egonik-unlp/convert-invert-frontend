@@ -13,7 +13,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type HealthStatus } from "@/lib/api-client";
+import { api, type HealthStatus, type LastRun } from "@/lib/api-client";
 import { AppConfigProvider } from "@/hooks/useAppConfig";
 import { ThemeProvider } from "@/lib/theme";
 import { isView, type View } from "@/lib/nav";
@@ -108,6 +108,7 @@ function Dashboard() {
 
   const [downloadsPaused, setDownloadsPaused] = useState(false);
   const [pipelineBusy, setPipelineBusy] = useState(false);
+  const [lastRun, setLastRun] = useState<LastRun | null>(null);
 
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -155,8 +156,9 @@ function Dashboard() {
   }, []);
 
   const refreshPipeline = useCallback(async () => {
-    const { downloadsPaused: paused } = await api.getPipeline();
-    setDownloadsPaused(paused);
+    const state = await api.getPipeline();
+    setDownloadsPaused(state.downloadsPaused);
+    setLastRun(state.lastRun ?? null);
   }, []);
 
   const toggleDownloads = useCallback(async () => {
@@ -401,7 +403,7 @@ function Dashboard() {
                 onLoadMore={loadMore}
               />
             ) : view === "playlists" ? (
-              <PlaylistsView onLaunch={handleLaunch} />
+              <PlaylistsView onLaunch={handleLaunch} lastRun={lastRun} />
             ) : view === "downloads" ? (
               <DownloadsBrowser downloads={downloads} loading={downloadsLoading} onRefresh={fetchDownloads} />
             ) : view === "diagnostics" ? (

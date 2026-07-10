@@ -37,8 +37,16 @@ export interface HealthStatus {
   jaeger?: string;
 }
 
+export interface LastRun {
+  playlistId: string;
+  workerCount: number;
+  chunkSize: number;
+  portBase: number;
+}
+
 export interface PipelineState {
   downloadsPaused: boolean;
+  lastRun?: LastRun | null;
 }
 
 export interface AppConfig {
