@@ -58,6 +58,23 @@ export interface ActiveDownload {
   status?: string;
 }
 
+export interface ActivityItem {
+  trackId?: string;
+  title: string;
+  artist: string;
+  stage: "searching" | "judging" | "downloading";
+  progress?: number;
+  judgeSubmissionId?: number;
+  filename?: string;
+  username?: string;
+}
+
+export interface Activity {
+  searching: ActivityItem[];
+  judging: ActivityItem[];
+  downloading: ActivityItem[];
+}
+
 export interface AppConfig {
   judgeThreshold: number;
   auth: {
@@ -265,6 +282,12 @@ export const api = {
   async getActiveDownloads(): Promise<ActiveDownload[]> {
     const res = await fetchWithTimeout(`${API_BASE}/downloads/active`, { headers: authHeaders() });
     if (!res.ok) return [];
+    return res.json();
+  },
+
+  async getActivity(): Promise<Activity> {
+    const res = await fetchWithTimeout(`${API_BASE}/activity`, { headers: authHeaders() });
+    if (!res.ok) return { searching: [], judging: [], downloading: [] };
     return res.json();
   },
 

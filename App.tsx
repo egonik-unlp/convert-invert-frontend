@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDownToLine,
   CheckCircle2,
   DownloadCloud,
   ListMusic,
@@ -8,12 +9,14 @@ import {
   Pause,
   Play,
   RotateCw,
+  Scale,
+  Search,
   Terminal,
   Waves,
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type HealthStatus, type LastRun } from "@/lib/api-client";
+import { api, type Activity, type ActivityItem, type HealthStatus, type LastRun } from "@/lib/api-client";
 import { AppConfigProvider } from "@/hooks/useAppConfig";
 import { ThemeProvider } from "@/lib/theme";
 import { isView, type View } from "@/lib/nav";
@@ -57,6 +60,8 @@ const IN_FLIGHT: TrackStatus[] = [
 const emptyStats: GlobalStats = {
   totalTracks: 0,
   pending: 0,
+  searching: 0,
+  judging: 0,
   downloading: 0,
   completed: 0,
   failed: 0,
@@ -96,6 +101,7 @@ function Dashboard() {
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [stats, setStats] = useState<GlobalStats>(emptyStats);
+  const [activity, setActivity] = useState<Activity>({ searching: [], judging: [], downloading: [] });
   const [network, setNetwork] = useState<NetworkStats>(emptyNetwork);
   const [logs, setLogs] = useState<LogEntry[]>([]);
 
@@ -137,10 +143,16 @@ function Dashboard() {
   }, [view]);
 
   const refreshStats = useCallback(async () => {
-    const [s, n, l] = await Promise.all([api.getStats(), api.getNetwork(), api.getLogs()]);
+    const [s, n, l, a] = await Promise.all([
+      api.getStats(),
+      api.getNetwork(),
+      api.getLogs(),
+      api.getActivity(),
+    ]);
     setStats(s);
     setNetwork(n);
     setLogs(l);
+    setActivity(a);
   }, []);
 
   const loadLibrary = useCallback(async () => {
@@ -282,7 +294,6 @@ function Dashboard() {
     }
   }, [tracks, libraryFilter]);
 
-  const activeTracks = useMemo(() => tracks.filter((t) => IN_FLIGHT.includes(t.status)), [tracks]);
 
   const openTrack = (track: Track) => {
     setSelectedTrack(track);
@@ -411,8 +422,7 @@ function Dashboard() {
             {view === "overview" ? (
               <OverviewView
                 stats={stats}
-                activeTracks={activeTracks}
-                onSelect={openTrack}
+                activity={activity}
                 onStart={() => navigate("playlists")}
               />
             ) : view === "library" ? (
@@ -447,22 +457,27 @@ function Dashboard() {
   );
 }
 
-function OverviewView({
-  stats,
-  activeTracks,
-  onSelect,
-  onStart,
-}: {
-  stats: GlobalStats;
-  activeTracks: Track[];
-  onSelect: (t: Track) => void;
-  onStart: () => void;
-}) {
+const ACTIVITY_STAGE: Record<
+  ActivityItem["stage"],
+  { label: string; Icon: typeof Search; badge: string }
+> = {
+  searching: { label: "Searching", Icon: Search, badge: "bg-info/15 text-info" },
+  judging: { label: "Judging", Icon: Scale, badge: "bg-info/15 text-info" },
+  downloading: { label: "Downloading", Icon: ArrowDownToLine, badge: "bg-primary/15 text-primary" },
+};
+
+const activityBaseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+function OverviewView({ stats, activity, onStart }: { stats: GlobalStats; activity: Activity; onStart: () => void }) {
+  // Downloads first (most actionable), then judging, then searching.
+  const items = [...activity.downloading, ...activity.judging, ...activity.searching];
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total tracks" value={stats.totalTracks} Icon={ListMusic} tone="primary" />
-        <StatCard label="Downloading" value={stats.downloading} Icon={DownloadCloud} tone="info" />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+        <StatCard label="Total" value={stats.totalTracks} Icon={ListMusic} tone="primary" />
+        <StatCard label="Searching" value={stats.searching} Icon={Search} tone="info" />
+        <StatCard label="Judging" value={stats.judging} Icon={Scale} tone="info" />
+        <StatCard label="Downloading" value={stats.downloading} Icon={DownloadCloud} tone="primary" />
         <StatCard label="Completed" value={stats.completed} Icon={CheckCircle2} tone="success" />
         <StatCard label="Failed" value={stats.failed} Icon={XCircle} tone={stats.failed > 0 ? "danger" : "muted"} />
       </div>
@@ -482,18 +497,53 @@ function OverviewView({
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Active transfers</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            Live activity
+            <span className="ml-2 tabular text-xs font-normal text-muted-foreground">{items.length} in flight</span>
+          </h2>
           <Button variant="outline" size="sm" onClick={onStart}>
             Start a sync
           </Button>
         </div>
-        <TrackTable
-          tracks={activeTracks}
-          onSelect={onSelect}
-          emptyTitle="Nothing in flight"
-          emptyDetail="No tracks are currently searching or downloading. Start a sync from Playlists."
-          emptyIcon={DownloadCloud}
-        />
+        {items.length === 0 ? (
+          <EmptyState
+            icon={DownloadCloud}
+            title="Nothing in flight"
+            detail="No tracks are searching, being judged, or downloading right now. Start a sync from Playlists."
+          />
+        ) : (
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            {items.map((item, index) => {
+              const meta = ACTIVITY_STAGE[item.stage];
+              const primary =
+                item.title || (item.filename ? activityBaseName(item.filename) : `#${item.judgeSubmissionId ?? index}`);
+              const secondary =
+                item.stage === "downloading"
+                  ? [item.artist, item.username].filter(Boolean).join(" · ")
+                  : item.artist;
+              return (
+                <li
+                  key={`${item.stage}-${item.trackId ?? item.judgeSubmissionId ?? index}`}
+                  className="flex items-center gap-3 px-4 py-2.5"
+                >
+                  <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[0.7rem] font-medium", meta.badge)}>
+                    <meta.Icon className="h-3 w-3" aria-hidden />
+                    {meta.label}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-foreground" title={primary}>
+                      {primary}
+                    </p>
+                    {secondary ? <p className="truncate text-xs text-muted-foreground">{secondary}</p> : null}
+                  </div>
+                  {item.stage === "downloading" ? (
+                    <span className="tabular shrink-0 text-xs font-medium text-primary">{item.progress ?? 0}%</span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
     </div>
   );

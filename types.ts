@@ -66,6 +66,8 @@ export interface NetworkStats {
 export interface GlobalStats {
   totalTracks: number;
   pending: number;
+  searching: number;
+  judging: number;
   downloading: number;
   completed: number;
   failed: number;
