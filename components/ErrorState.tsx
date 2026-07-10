@@ -1,17 +1,35 @@
-import { AlertTriangle } from "lucide-react";
+import { RotateCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+interface ErrorStateProps {
+  message: string;
+  title?: string;
+  onRetry?: () => void;
+  className?: string;
+}
+
+export function ErrorState({ message, title = "Request failed", onRetry, className }: ErrorStateProps) {
   return (
-    <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-5 text-sm text-destructive-foreground">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-foreground">Request failed</p>
-          <p className="mt-1 break-words text-muted-foreground">{message}</p>
-        </div>
-        {onRetry && <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>}
+    <div
+      className={cn(
+        "flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-10 text-center",
+        className,
+      )}
+    >
+      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/12 text-destructive">
+        <TriangleAlert className="h-5 w-5" aria-hidden />
       </div>
+      <div className="space-y-1">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        <p className="mx-auto max-w-md break-words text-sm text-muted-foreground">{message}</p>
+      </div>
+      {onRetry ? (
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          <RotateCw className="h-4 w-4" aria-hidden />
+          Retry
+        </Button>
+      ) : null}
     </div>
   );
 }

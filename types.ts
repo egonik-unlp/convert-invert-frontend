@@ -1,13 +1,12 @@
-
+// Track lifecycle states, matching exactly what the backend emits (see api.rs). The
+// backend only ever produces these six; earlier PARSING / IN_QUEUE were never sent.
 export enum TrackStatus {
-  PARSING = 'PARSING',
-  SEARCHING = 'SEARCHING',
-  FILTERING = 'FILTERING',
-  DOWNLOADING = 'DOWNLOADING',
-  FINALIZING = 'FINALIZING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED',
-  IN_QUEUE = 'IN_QUEUE'
+  SEARCHING = "SEARCHING",
+  FILTERING = "FILTERING",
+  DOWNLOADING = "DOWNLOADING",
+  FINALIZING = "FINALIZING",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
 }
 
 export interface Candidate {
@@ -16,17 +15,15 @@ export interface Candidate {
   username: string;
   filename: string;
   score: number;
-  size?: string;
-  speed?: string;
+  // Experimental relative-MI score recorded alongside the primary score (api.rs).
+  relativeMiScore?: number;
 }
 
 export interface LogEntry {
   id: string;
   timestamp: number;
   message: string;
-  level: 'info' | 'warn' | 'error' | 'debug';
-  trackId?: string;
-  progress?: number;
+  level: "info" | "debug";
 }
 
 export interface Track {
@@ -38,11 +35,11 @@ export interface Track {
   status: TrackStatus;
   progress: number;
   score?: number;
+  relativeMiScore?: number;
   candidatesCount: number;
   username?: string;
   filename?: string;
   downloadStatus?: string;
-  coverArt?: string;
   rejectReason?: string;
 }
 
@@ -59,7 +56,7 @@ export interface Playlist {
 }
 
 export interface NetworkStats {
-  status: 'CONNECTED' | 'DISCONNECTED';
+  status: "CONNECTED" | "DISCONNECTED";
   user: string;
   latency: string;
   node: string;

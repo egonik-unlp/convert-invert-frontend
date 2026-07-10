@@ -5,26 +5,95 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Relay console design tokens.
+ *
+ * Two committed themes. Light is the default `:root`; `.dark` overrides. The theme
+ * script in index.html sets the `dark` class before paint (no flash). Values are HSL
+ * channel triples so Tailwind can inject alpha via `hsl(var(--x) / <alpha-value>)`.
+ *
+ * Restrained product palette: cool-slate neutrals + a single azure accent for actions,
+ * selection, and focus. Status is carried by a semantic ramp (success/warning/danger/info),
+ * never by the accent. The sidebar sits on its own slightly-deeper neutral layer.
+ */
 @layer base {
   :root {
-    --background: 222 47% 7%;
-    --foreground: 210 40% 98%;
-    --card: 222 39% 10%;
-    --card-foreground: 210 40% 98%;
-    --primary: 270 95% 65%;
-    --primary-foreground: 222 47% 7%;
-    --secondary: 186 56% 42%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217 28% 17%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 270 95% 65%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217 28% 18%;
-    --input: 217 28% 18%;
-    --ring: 270 95% 65%;
-    --radius: 0.75rem;
+    --background: 210 40% 98%;
+    --foreground: 222 34% 14%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 34% 14%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 34% 14%;
+
+    --sidebar: 214 32% 96%;
+    --sidebar-foreground: 222 20% 34%;
+
+    --muted: 214 24% 93%;
+    --muted-foreground: 220 12% 40%;
+
+    --accent: 214 30% 93%;
+    --accent-foreground: 222 34% 18%;
+
+    --secondary: 214 26% 93%;
+    --secondary-foreground: 222 34% 18%;
+
+    --primary: 224 76% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 46%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 58% 34%;
+    --success-foreground: 0 0% 100%;
+    --warning: 30 90% 40%;
+    --warning-foreground: 0 0% 100%;
+    --info: 205 82% 42%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 22% 87%;
+    --input: 214 22% 84%;
+    --ring: 224 76% 52%;
+    --radius: 0.7rem;
+  }
+
+  .dark {
+    --background: 224 26% 7%;
+    --foreground: 213 26% 92%;
+
+    --card: 223 24% 10%;
+    --card-foreground: 213 26% 92%;
+
+    --popover: 223 26% 9%;
+    --popover-foreground: 213 26% 92%;
+
+    --sidebar: 225 27% 8%;
+    --sidebar-foreground: 214 16% 68%;
+
+    --muted: 222 18% 17%;
+    --muted-foreground: 216 15% 65%;
+
+    --accent: 222 20% 16%;
+    --accent-foreground: 213 26% 94%;
+
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 213 26% 94%;
+
+    --primary: 223 84% 66%;
+    --primary-foreground: 224 40% 8%;
+
+    --destructive: 0 74% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 58% 48%;
+    --success-foreground: 150 40% 8%;
+    --warning: 38 92% 58%;
+    --warning-foreground: 36 45% 8%;
+    --info: 205 85% 62%;
+    --info-foreground: 205 45% 8%;
+
+    --border: 220 16% 19%;
+    --input: 220 16% 22%;
+    --ring: 223 84% 66%;
   }
 
   * {
@@ -38,20 +107,56 @@
     width: 100%;
   }
 
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
   body {
     @apply m-0 overflow-hidden bg-background text-foreground antialiased;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Numeric data (progress, counts, sizes) aligns in tables when tabular. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-.custom-scrollbar::-webkit-scrollbar {
-  width: 8px;
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.3);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  .scrollbar-thin:hover::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.5);
+  }
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: hsl(var(--background));
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--accent) / 0.6);
-  border-radius: 999px;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

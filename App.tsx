@@ -1,330 +1,515 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Database, RefreshCw } from "lucide-react";
-import { api, HealthStatus } from "@/lib/api-client";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody } from "@/components/ui/table";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CheckCircle2,
+  DownloadCloud,
+  ListMusic,
+  Loader2,
+  Menu,
+  RotateCw,
+  Terminal,
+  Waves,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+import { api, type HealthStatus } from "@/lib/api-client";
 import { AppConfigProvider } from "@/hooks/useAppConfig";
-import { TrackStatus, Track, Playlist, NetworkStats, GlobalStats, LogEntry, StartRequest, DownloadedFile } from "@/types";
+import { ThemeProvider } from "@/lib/theme";
+import { isView, type View } from "@/lib/nav";
+import {
+  TrackStatus,
+  type DownloadedFile,
+  type GlobalStats,
+  type LogEntry,
+  type NetworkStats,
+  type StartRequest,
+  type Track,
+} from "@/types";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Toaster } from "@/components/ui/toaster";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import Sidebar from "@/components/Sidebar";
-import StatsHeader from "@/components/StatsHeader";
-import TrackRow from "@/components/TrackRow";
-import GlobalFooter from "@/components/GlobalFooter";
-import SimilarityModal from "@/components/SimilarityModal";
-import WorkersView from "@/components/WorkersView";
-import PlaylistsView from "@/components/PlaylistsView";
+import { Sidebar } from "@/components/Sidebar";
+import { StatCard } from "@/components/StatCard";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { TrackTable } from "@/components/TrackTable";
+import { PlaylistsView } from "@/components/PlaylistsView";
 import { DownloadsBrowser } from "@/components/DownloadsBrowser";
+import { WorkersView } from "@/components/WorkersView";
+import { CandidateModal } from "@/components/CandidateModal";
 
-type View = "dashboard" | "playlists" | "downloads" | "rejected" | "history" | "settings" | "logs";
-const viewValues: View[] = ["dashboard", "playlists", "downloads", "rejected", "history", "settings", "logs"];
+const LIBRARY_ID = "all";
+const PAGE_SIZE = 100;
+const POLL_MS = 1500;
 
-const getInitialView = (): View => {
-  const hash = window.location.hash.replace(/^#\/?/, "");
-  return viewValues.includes(hash as View) ? (hash as View) : "dashboard";
-};
+const IN_FLIGHT: TrackStatus[] = [
+  TrackStatus.SEARCHING,
+  TrackStatus.FILTERING,
+  TrackStatus.DOWNLOADING,
+  TrackStatus.FINALIZING,
+];
 
-const fallbackNetwork: NetworkStats = { status: "DISCONNECTED", user: "...", latency: "...", node: "...", totalBandwidth: "..." };
-const fallbackStats: GlobalStats = {
+const emptyStats: GlobalStats = {
   totalTracks: 0,
   pending: 0,
   downloading: 0,
   completed: 0,
   failed: 0,
   globalProgress: 0,
-  remainingTime: "...",
+  remainingTime: "—",
   tableCounts: {},
 };
+const emptyNetwork: NetworkStats = { status: "DISCONNECTED", user: "—", latency: "—", node: "—", totalBandwidth: "—" };
 
-const Dashboard: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>(getInitialView);
-  const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
-  const [stats, setStats] = useState<GlobalStats | null>(null);
-  const [network, setNetwork] = useState<NetworkStats | null>(null);
+const VIEW_META: Record<View, { title: string; subtitle: string }> = {
+  overview: { title: "Overview", subtitle: "Run health and active transfers" },
+  library: { title: "Library", subtitle: "Every track and its current stage" },
+  playlists: { title: "Playlists", subtitle: "Start a new Spotify sync" },
+  downloads: { title: "Downloads", subtitle: "Completed audio files" },
+  diagnostics: { title: "Diagnostics", subtitle: "Workers and server tuning" },
+  logs: { title: "Logs", subtitle: "Live system telemetry" },
+};
+
+type LibraryFilter = "all" | "active" | "completed" | "failed";
+
+function getInitialView(): View {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  return isView(hash) ? hash : "overview";
+}
+
+/** Merge track pages by id, newest (highest id) first, letting fresh entries win. */
+function mergeTracks(existing: Track[], incoming: Track[]): Track[] {
+  const byId = new Map<string, Track>();
+  for (const track of existing) byId.set(String(track.id), track);
+  for (const track of incoming) byId.set(String(track.id), track);
+  return Array.from(byId.values()).sort((a, b) => Number(b.id) - Number(a.id));
+}
+
+function Dashboard() {
+  const [view, setView] = useState<View>(getInitialView);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [stats, setStats] = useState<GlobalStats>(emptyStats);
+  const [network, setNetwork] = useState<NetworkStats>(emptyNetwork);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
-  const [isBooting, setIsBooting] = useState(true);
+
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [nextCursor, setNextCursor] = useState<number | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [libraryLoading, setLibraryLoading] = useState(true);
+
   const [downloads, setDownloads] = useState<DownloadedFile[]>([]);
   const [downloadsLoading, setDownloadsLoading] = useState(false);
-  const [downloadsTab, setDownloadsTab] = useState<"files" | "pipeline">("files");
 
-  const fetchDownloads = async () => {
+  const [booting, setBooting] = useState(true);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
+  const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const navigate = useCallback((next: View) => setView(next), []);
+
+  // Keep the URL hash in sync with the active view (deep-linkable, survives refresh).
+  useEffect(() => {
+    const onHashChange = () => setView(getInitialView());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+  useEffect(() => {
+    const nextHash = view === "overview" ? "" : `#${view}`;
+    if (window.location.hash !== nextHash) {
+      history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+    }
+  }, [view]);
+
+  const refreshStats = useCallback(async () => {
+    const [s, n, l] = await Promise.all([api.getStats(), api.getNetwork(), api.getLogs()]);
+    setStats(s);
+    setNetwork(n);
+    setLogs(l);
+  }, []);
+
+  const loadLibrary = useCallback(async () => {
+    const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE });
+    setTracks(playlist.tracks ?? []);
+    setNextCursor(playlist.nextCursor);
+    setLibraryLoading(false);
+  }, []);
+
+  const pollLibrary = useCallback(async () => {
+    // Refresh the newest page and merge, so live status updates without dropping
+    // older pages the user loaded via "Load more".
+    const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE });
+    setTracks((current) => mergeTracks(current, playlist.tracks ?? []));
+    setNextCursor((current) => playlist.nextCursor ?? current);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (nextCursor == null) return;
+    setLoadingMore(true);
+    try {
+      const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE, cursor: nextCursor });
+      setTracks((current) => mergeTracks(current, playlist.tracks ?? []));
+      setNextCursor(playlist.nextCursor);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load more tracks");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor]);
+
+  const fetchDownloads = useCallback(async () => {
     setDownloadsLoading(true);
     try {
-      const data = await api.getDownloads();
-      setDownloads(data);
+      setDownloads(await api.getDownloads());
     } catch (err) {
-      console.warn("Failed to load completed downloads", err);
+      toast.error(err instanceof Error ? err.message : "Failed to load downloads");
     } finally {
       setDownloadsLoading(false);
     }
-  };
+  }, []);
 
-  const loadDashboardData = async () => {
-      const [s, n, l] = await Promise.all([api.getStats(), api.getNetwork(), api.getLogs()]);
-      setStats(s);
-      setNetwork(n);
-      setLogs(l);
-    if (activePlaylist) {
-      setActivePlaylist(await api.getPlaylist(activePlaylist.id));
-    }
-  };
-
-  const checkHealthAndLoad = async () => {
-    setIsBooting(true);
-    setError(null);
+  const boot = useCallback(async () => {
+    setBooting(true);
+    setBootError(null);
     try {
       const h = await api.getHealth();
       setHealth(h);
       if (h.api !== "ONLINE" || h.db !== "CONNECTED") {
-        throw new Error(h.error || `Database bridge reported as ${h.db || "OFFLINE"}`);
+        throw new Error(h.error || `Backend reported API ${h.api}, DB ${h.db}`);
       }
-
-      const [s, n, p, l] = await Promise.all([api.getStats(), api.getNetwork(), api.getPlaylists(), api.getLogs()]);
-      setStats(s);
-      setNetwork(n);
-      setPlaylists(p);
-      setLogs(l);
-      if (p.length > 0) setActivePlaylist(await api.getPlaylist(p[0].id));
-      setIsBooting(false);
-    } catch (err: any) {
-      setError(err.message || "Fatal error connecting to DB bridge.");
-      setStats(fallbackStats);
-      setNetwork(fallbackNetwork);
-      setPlaylists([]);
-      setLogs([]);
-      setActivePlaylist(null);
-      setIsBooting(false);
+      await Promise.all([refreshStats(), loadLibrary()]);
+      setStale(false);
+      setBooting(false);
+    } catch (err) {
+      setBootError(err instanceof Error ? err.message : "Could not reach the backend");
+      setBooting(false);
     }
-  };
+  }, [refreshStats, loadLibrary]);
 
   useEffect(() => {
-    checkHealthAndLoad();
-  }, []);
+    void boot();
+  }, [boot]);
 
+  // Live polling of stats + library once booted.
   useEffect(() => {
-    const handleHashChange = () => setCurrentView(getInitialView());
-    window.addEventListener("hashchange", handleHashChange);
-    return () => window.removeEventListener("hashchange", handleHashChange);
-  }, []);
-
-  useEffect(() => {
-    const nextHash = currentView === "dashboard" ? "" : `#${currentView}`;
-    if (window.location.hash !== nextHash) {
-      history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
-    }
-  }, [currentView]);
-
-  useEffect(() => {
-    if (currentView === "downloads") {
-      fetchDownloads();
-    }
-  }, [currentView]);
-
-  useEffect(() => {
-    if (isBooting) return;
-    const interval = setInterval(() => {
-      loadDashboardData().catch((err) => console.warn("Poll failed", err));
-    }, 1500);
+    if (booting || bootError) return;
+    const tick = () =>
+      Promise.all([refreshStats(), pollLibrary()])
+        .then(() => setStale(false))
+        .catch(() => setStale(true));
+    const interval = setInterval(tick, POLL_MS);
     return () => clearInterval(interval);
-  }, [isBooting, activePlaylist?.id]);
+  }, [booting, bootError, refreshStats, pollLibrary]);
+
+  // Downloads are fetched lazily when their view opens.
+  useEffect(() => {
+    if (view === "downloads" && !booting && !bootError) void fetchDownloads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, booting, bootError]);
 
   const filteredTracks = useMemo(() => {
-    if (!activePlaylist) return [];
-    switch (currentView) {
-      case "downloads":
-        return activePlaylist.tracks.filter((t) => [TrackStatus.SEARCHING, TrackStatus.FILTERING, TrackStatus.DOWNLOADING, TrackStatus.FINALIZING].includes(t.status));
-      case "rejected":
-        return activePlaylist.tracks.filter((t) => t.status === TrackStatus.FAILED);
-      case "history":
-        return activePlaylist.tracks.filter((t) => t.status === TrackStatus.COMPLETED || t.status === TrackStatus.FAILED);
+    switch (libraryFilter) {
+      case "active":
+        return tracks.filter((t) => IN_FLIGHT.includes(t.status));
+      case "completed":
+        return tracks.filter((t) => t.status === TrackStatus.COMPLETED);
+      case "failed":
+        return tracks.filter((t) => t.status === TrackStatus.FAILED);
       default:
-        return activePlaylist.tracks;
+        return tracks;
     }
-  }, [activePlaylist, currentView]);
+  }, [tracks, libraryFilter]);
 
-  const handleTrackClick = (track: Track) => {
+  const activeTracks = useMemo(() => tracks.filter((t) => IN_FLIGHT.includes(t.status)), [tracks]);
+
+  const openTrack = (track: Track) => {
     setSelectedTrack(track);
-    setIsModalOpen(true);
+    setModalOpen(true);
   };
 
-  const handlePlaylistSelect = async (playlist: Playlist) => {
-    setActivePlaylist(await api.getPlaylist(playlist.id));
+  const handleLaunch = async (req: StartRequest) => {
+    const started = await api.startWorkers(req);
+    toast.success(`Started ${started.length} worker${started.length === 1 ? "" : "s"} for ${req.playlist_id}`);
+    await Promise.all([refreshStats(), loadLibrary()]).catch(() => setStale(true));
+    navigate("library");
   };
 
-  const handleManualStart = async (request: StartRequest) => {
-    const workers = await api.startWorkers(request);
-    await loadDashboardData();
-    setNotice(`Started ${workers.length} worker${workers.length === 1 ? "" : "s"} for playlist ${request.playlist_id}.`);
-    setDownloadsTab("pipeline");
-    setCurrentView("downloads");
+  const manualRefresh = () => {
+    if (view === "downloads") {
+      void fetchDownloads();
+      return;
+    }
+    Promise.all([refreshStats(), loadLibrary()])
+      .then(() => setStale(false))
+      .catch(() => setStale(true));
   };
 
-  if (isBooting) {
+  if (booting) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-background p-8 text-center">
-        <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-lg border bg-card text-primary">
-          <Database className="h-8 w-8" aria-hidden="true" />
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background p-8 text-center">
+        <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+          <Waves className="h-7 w-7" aria-hidden />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Starting console…</p>
+          {health?.targetUrl ? <p className="mt-1 font-mono text-xs text-muted-foreground">{health.targetUrl}</p> : null}
         </div>
-        <p className="text-sm font-medium text-muted-foreground">Initializing Sync Engine Dashboard</p>
-        {health?.targetUrl && <p className="mt-2 font-mono text-xs text-muted-foreground">{health.targetUrl}</p>}
-        {error ? (
-          <div className="mt-6 max-w-lg rounded-lg border border-destructive/30 bg-destructive/10 p-5">
-            <p className="break-words text-sm text-muted-foreground">{error}</p>
-            <Button className="mt-4" onClick={checkHealthAndLoad}>
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <div className="mt-6 h-1 w-48 overflow-hidden rounded-full bg-muted">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-primary" />
-          </div>
-        )}
+        <div className="h-1 w-48 overflow-hidden rounded-full bg-muted">
+          <div className="h-full w-1/3 rounded-full bg-primary/70 animate-indeterminate" />
+        </div>
       </div>
     );
   }
 
+  const meta = VIEW_META[view];
+
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      <Sidebar currentView={currentView} onViewChange={setCurrentView} network={network || fallbackNetwork} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        {stats && <StatsHeader stats={stats} />}
+      <Sidebar
+        currentView={view}
+        onNavigate={navigate}
+        network={network}
+        mobileOpen={mobileNavOpen}
+        onCloseMobile={() => setMobileNavOpen(false)}
+      />
 
-        <div className="flex-1 overflow-y-auto p-4 pb-24 custom-scrollbar md:p-6">
-          {error && (
-            <div className="mx-auto mb-4 max-w-7xl">
-              <ErrorState message={error} onRetry={checkHealthAndLoad} />
-            </div>
-          )}
-          {notice && (
-            <div className="mx-auto mb-4 max-w-7xl rounded-lg border border-primary/30 bg-primary/10 p-4 text-sm text-foreground">
-              <div className="flex items-center justify-between gap-4">
-                <span>{notice}</span>
-                <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                  Dismiss
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {currentView === "settings" ? (
-            <WorkersView />
-          ) : currentView === "playlists" ? (
-            <PlaylistsView playlists={playlists} activePlaylist={activePlaylist} onSelect={handlePlaylistSelect} onManualStart={handleManualStart} />
-          ) : currentView === "logs" ? (
-            <section className="mx-auto max-w-7xl">
-              <h2 className="text-2xl font-semibold">Live System Telemetry</h2>
-              <div className="mt-4 min-h-[60vh] rounded-lg border bg-card p-4 font-mono text-xs">
-                {logs.length === 0 ? (
-                  <EmptyState icon={Database} title="No events captured" detail="Jaeger logs have not returned entries for this dashboard session." />
-                ) : (
-                  <div className="space-y-1">
-                    {logs.map((log) => (
-                      <div key={log.id} className="grid grid-cols-[8rem_6rem_1fr] gap-3 rounded px-2 py-1 hover:bg-muted/30">
-                        <span className="text-muted-foreground">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                        <span className="text-primary">{log.trackId ? `#${log.trackId}` : log.level}</span>
-                        <span className="truncate">{log.message}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-          ) : currentView === "downloads" ? (
-            <section className="mx-auto max-w-7xl space-y-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-2xl font-semibold capitalize">Downloads</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Manage your completed audio files and active background download pipeline.</p>
-                </div>
-                
-                <div className="flex rounded-lg border bg-card/50 p-1 shrink-0">
-                  <Button
-                    variant={downloadsTab === "files" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setDownloadsTab("files")}
-                    className="h-8 text-xs px-4 font-medium"
-                  >
-                    Completed Files ({downloads.length})
-                  </Button>
-                  <Button
-                    variant={downloadsTab === "pipeline" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setDownloadsTab("pipeline")}
-                    className="h-8 text-xs px-4 font-medium"
-                  >
-                    Active Pipeline ({filteredTracks.length})
-                  </Button>
-                </div>
-              </div>
-
-              {downloadsTab === "files" ? (
-                <DownloadsBrowser 
-                  downloads={downloads} 
-                  loading={downloadsLoading} 
-                  onRefresh={fetchDownloads} 
-                />
-              ) : (
-                filteredTracks.length > 0 ? (
-                  <div className="overflow-hidden rounded-lg border bg-card">
-                    <Table>
-                      <TableBody>
-                        {filteredTracks.map((track) => (
-                          <TrackRow key={track.id} track={track} onClick={() => handleTrackClick(track)} />
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ) : (
-                  <EmptyState icon={Database} title="No active pipeline tracks" detail="There are currently no tracks actively searching or downloading." />
-                )
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur md:px-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            aria-label="Open navigation"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <Menu className="h-5 w-5" aria-hidden />
+          </Button>
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold text-foreground">{meta.title}</h1>
+            <p className="truncate text-xs text-muted-foreground">{meta.subtitle}</p>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
+            <span
+              className={cn(
+                "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium sm:inline-flex",
+                stale ? "bg-warning/15 text-warning" : "bg-success/12 text-success",
               )}
-            </section>
-          ) : (
-            <section className="mx-auto max-w-7xl">
-              <div className="mb-5">
-                <h2 className="text-2xl font-semibold capitalize">{currentView}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">{activePlaylist?.name || "Library synchronization state"}</p>
+              title={stale ? "Reconnecting to the backend" : "Receiving live updates"}
+            >
+              <span
+                className={cn("h-1.5 w-1.5 rounded-full", stale ? "bg-warning" : "bg-success", !stale && "animate-pulse")}
+                aria-hidden
+              />
+              {stale ? "Reconnecting" : "Live"}
+            </span>
+            <Button variant="ghost" size="icon" onClick={manualRefresh} aria-label="Refresh" title="Refresh">
+              <RotateCw className="h-[1.15rem] w-[1.15rem]" aria-hidden />
+            </Button>
+            <ThemeToggle />
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto scrollbar-thin">
+          <div className="mx-auto max-w-6xl px-4 py-6 md:px-6">
+            {bootError ? (
+              <div className="mb-6">
+                <ErrorState title="Backend unreachable" message={bootError} onRetry={() => void boot()} />
               </div>
+            ) : null}
 
-              {filteredTracks.length > 0 ? (
-                <div className="overflow-hidden rounded-lg border bg-card">
-                  <Table>
-                    <TableBody>
-                      {filteredTracks.map((track) => (
-                        <TrackRow key={track.id} track={track} onClick={() => handleTrackClick(track)} />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              ) : (
-                <EmptyState icon={Database} title="No records found" detail="The current filter returned no tracks from the active playlist." />
-              )}
-            </section>
-          )}
-        </div>
+            {view === "overview" ? (
+              <OverviewView
+                stats={stats}
+                activeTracks={activeTracks}
+                onSelect={openTrack}
+                onStart={() => navigate("playlists")}
+              />
+            ) : view === "library" ? (
+              <LibraryView
+                tracks={filteredTracks}
+                loading={libraryLoading}
+                filter={libraryFilter}
+                onFilter={setLibraryFilter}
+                onSelect={openTrack}
+                canLoadMore={libraryFilter === "all" && nextCursor != null}
+                loadingMore={loadingMore}
+                onLoadMore={loadMore}
+              />
+            ) : view === "playlists" ? (
+              <PlaylistsView onLaunch={handleLaunch} />
+            ) : view === "downloads" ? (
+              <DownloadsBrowser downloads={downloads} loading={downloadsLoading} onRefresh={fetchDownloads} />
+            ) : view === "diagnostics" ? (
+              <WorkersView />
+            ) : (
+              <LogsView logs={logs} />
+            )}
+          </div>
+        </main>
+      </div>
 
-        {stats && network && <GlobalFooter stats={stats} network={network} />}
-      </main>
-
-      {isModalOpen && <SimilarityModal track={selectedTrack} onClose={() => setIsModalOpen(false)} />}
+      <CandidateModal track={selectedTrack} open={modalOpen} onOpenChange={setModalOpen} />
     </div>
   );
-};
+}
 
-const App: React.FC = () => (
-  <ErrorBoundary>
-    <AppConfigProvider>
-      <Dashboard />
-    </AppConfigProvider>
-  </ErrorBoundary>
-);
+function OverviewView({
+  stats,
+  activeTracks,
+  onSelect,
+  onStart,
+}: {
+  stats: GlobalStats;
+  activeTracks: Track[];
+  onSelect: (t: Track) => void;
+  onStart: () => void;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Total tracks" value={stats.totalTracks} Icon={ListMusic} tone="primary" />
+        <StatCard label="Downloading" value={stats.downloading} Icon={DownloadCloud} tone="info" />
+        <StatCard label="Completed" value={stats.completed} Icon={CheckCircle2} tone="success" />
+        <StatCard label="Failed" value={stats.failed} Icon={XCircle} tone={stats.failed > 0 ? "danger" : "muted"} />
+      </div>
 
-export default App;
+      <div className="rounded-xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-foreground">Overall progress</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.completed} of {stats.totalTracks} tracks · est. {stats.remainingTime}
+            </p>
+          </div>
+          <span className="tabular text-2xl font-semibold tracking-tight text-foreground">{stats.globalProgress}%</span>
+        </div>
+        <Progress value={stats.globalProgress} className="mt-4 h-2" />
+      </div>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Active transfers</h2>
+          <Button variant="outline" size="sm" onClick={onStart}>
+            Start a sync
+          </Button>
+        </div>
+        <TrackTable
+          tracks={activeTracks}
+          onSelect={onSelect}
+          emptyTitle="Nothing in flight"
+          emptyDetail="No tracks are currently searching or downloading. Start a sync from Playlists."
+          emptyIcon={DownloadCloud}
+        />
+      </section>
+    </div>
+  );
+}
+
+function LibraryView({
+  tracks,
+  loading,
+  filter,
+  onFilter,
+  onSelect,
+  canLoadMore,
+  loadingMore,
+  onLoadMore,
+}: {
+  tracks: Track[];
+  loading: boolean;
+  filter: LibraryFilter;
+  onFilter: (f: LibraryFilter) => void;
+  onSelect: (t: Track) => void;
+  canLoadMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
+}) {
+  const filters: { id: LibraryFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "active", label: "Active" },
+    { id: "completed", label: "Completed" },
+    { id: "failed", label: "Failed" },
+  ];
+  return (
+    <div className="space-y-4">
+      <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
+        {filters.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => onFilter(f.id)}
+            className={cn(
+              "rounded-md px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              filter === f.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <TrackTable
+        tracks={tracks}
+        loading={loading}
+        onSelect={onSelect}
+        emptyTitle="No tracks here yet"
+        emptyDetail="Start a sync from Playlists to populate the library, then watch each track move through its stages."
+      />
+
+      {canLoadMore ? (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
+            {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+            Load older tracks
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LogsView({ logs }: { logs: LogEntry[] }) {
+  const endRef = useRef<HTMLDivElement>(null);
+  if (logs.length === 0) {
+    return (
+      <EmptyState
+        icon={Terminal}
+        title="No log events yet"
+        detail="Telemetry from the backend appears here as workers search, judge, and download."
+      />
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="max-h-[calc(100vh-12rem)] overflow-y-auto scrollbar-thin p-2 font-mono text-xs">
+        {logs.map((log) => (
+          <div key={log.id} className="grid grid-cols-[auto_auto_1fr] items-baseline gap-3 rounded px-2 py-1 hover:bg-muted/40">
+            <span className="tabular text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</span>
+            <span className={cn("uppercase", log.level === "debug" ? "text-muted-foreground" : "text-info")}>{log.level}</span>
+            <span className="break-words text-foreground">{log.message}</span>
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppConfigProvider>
+          <Dashboard />
+          <Toaster />
+        </AppConfigProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
+  );
+}

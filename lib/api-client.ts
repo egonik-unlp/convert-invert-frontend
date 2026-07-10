@@ -11,11 +11,14 @@ export const fallbackTuning: AppConfig["tuning"] = {
   downloadConcurrency: 1,
   searchTimeoutSecs: 20,
   searchEmptyResultCutoff: 8,
-  maxCandidatesPerTrack: 3,
-  maxDownloadAttemptsPerTrack: 2,
+  maxCandidatesPerTrack: 8,
+  maxDownloadAttemptsPerTrack: 4,
   candidateCollectionSecs: 20,
   maxSearchPassesPerTrack: 2,
   maxRequestsPerTrack: 8,
+  retryBackoffMs: 1000,
+  searchPacingMs: 500,
+  peerCooldownSecs: 120,
   workerPortRange: "41000-41000",
   shareMode: "disabled",
   sharePath: "/downloads",
@@ -47,6 +50,9 @@ export interface AppConfig {
     candidateCollectionSecs: number;
     maxSearchPassesPerTrack: number;
     maxRequestsPerTrack: number;
+    retryBackoffMs: number;
+    searchPacingMs: number;
+    peerCooldownSecs: number;
     workerPortRange: string;
     shareMode: string;
     sharePath: string;
@@ -160,8 +166,15 @@ export const api = {
     return res.json();
   },
 
-  async getPlaylist(id: string): Promise<Playlist> {
-    const res = await fetchWithTimeout(`${API_BASE}/playlists/${id}`, { headers: authHeaders() });
+  async getPlaylist(id: string, opts: { limit?: number; cursor?: number } = {}): Promise<Playlist> {
+    const params = new URLSearchParams();
+    if (opts.limit != null) params.set("limit", String(opts.limit));
+    if (opts.cursor != null) params.set("cursor", String(opts.cursor));
+    const qs = params.toString();
+    const res = await fetchWithTimeout(
+      `${API_BASE}/playlists/${id}${qs ? `?${qs}` : ""}`,
+      { headers: authHeaders() },
+    );
     return handleResponse(res, "Track query failed");
   },
 
@@ -184,7 +197,7 @@ export const api = {
   async startWorkers(req: StartRequest): Promise<WorkerInfo[]> {
     let res: Response;
     const before = await fetchWorkerStatus().catch(() => null);
-    const beforeIds = new Set(before?.workers.map((worker) => worker.id) ?? []);
+    const beforeIds = new Set<number>(before?.workers.map((worker) => worker.id) ?? []);
 
     try {
       res = await fetchWithTimeout(

@@ -1,22 +1,14 @@
-import React, { useState, useMemo } from "react";
-import { 
-  Music, 
-  Search, 
-  Copy, 
-  Check, 
-  HardDrive, 
-  Disc, 
-  Calendar, 
-  ArrowUpDown, 
-  RefreshCw, 
-  FileAudio,
-  SlidersHorizontal
-} from "lucide-react";
-import { DownloadedFile } from "@/types";
-import { Card, CardContent } from "@/components/ui/card";
+import { useMemo, useState } from "react";
+import { ArrowUpDown, Check, Copy, Disc3, FileAudio, HardDrive, Music, RotateCw, Search } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/EmptyState";
+import { StatCard } from "@/components/StatCard";
+import { TONE_SOFT } from "@/lib/status";
+import { cn } from "@/lib/utils";
+import type { DownloadedFile } from "@/types";
 
 interface DownloadsBrowserProps {
   downloads: DownloadedFile[];
@@ -24,332 +16,186 @@ interface DownloadsBrowserProps {
   onRefresh: () => void;
 }
 
-export const DownloadsBrowser: React.FC<DownloadsBrowserProps> = ({ 
-  downloads, 
-  loading, 
-  onRefresh 
-}) => {
+type SortKey = "date" | "size" | "name";
+type FormatFilter = "all" | "flac" | "mp3";
+
+function humanSize(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  return `${parseFloat((bytes / 1024 ** i).toFixed(2))} ${units[i]}`;
+}
+
+function ext(name: string): string {
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+}
+
+function formatTone(name: string): keyof typeof TONE_SOFT {
+  const e = ext(name);
+  if (e === "flac" || e === "wav" || e === "aiff") return "info";
+  if (e === "mp3") return "success";
+  return "muted";
+}
+
+export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBrowserProps) {
   const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "mp3" | "flac">("all");
-  const [sortBy, setSortBy] = useState<"date" | "size" | "name">("date");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [format, setFormat] = useState<FormatFilter>("all");
+  const [sortBy, setSortBy] = useState<SortKey>("date");
+  const [desc, setDesc] = useState(true);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  const getHumanSize = (bytes: number): string => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
-  const handleCopy = async (text: string, index: number) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex(null), 2000);
-    } catch (err) {
-      console.error("Failed to copy text: ", err);
-    }
-  };
-
-  // Calculate Statistics
   const stats = useMemo(() => {
-    const totalFiles = downloads.length;
-    const totalSize = downloads.reduce((acc, f) => acc + f.size, 0);
-    const flacCount = downloads.filter((f) => f.name.toLowerCase().endsWith(".flac")).length;
-    const mp3Count = downloads.filter((f) => f.name.toLowerCase().endsWith(".mp3")).length;
-
-    return {
-      totalFiles,
-      totalSize: getHumanSize(totalSize),
-      flacCount,
-      mp3Count,
-    };
+    const totalSize = downloads.reduce((sum, f) => sum + f.size, 0);
+    const flac = downloads.filter((f) => ext(f.name) === "flac").length;
+    const mp3 = downloads.filter((f) => ext(f.name) === "mp3").length;
+    return { count: downloads.length, size: humanSize(totalSize), flac, mp3 };
   }, [downloads]);
 
-  // Filter and Sort Data
-  const filteredAndSorted = useMemo(() => {
-    let result = [...downloads];
-
-    // Filter by search
-    if (search.trim() !== "") {
-      const q = search.toLowerCase();
-      result = result.filter((f) => f.name.toLowerCase().includes(q));
-    }
-
-    // Filter by type
-    if (filterType !== "all") {
-      result = result.filter((f) => f.name.toLowerCase().endsWith(`.${filterType}`));
-    }
-
-    // Sort
-    result.sort((a, b) => {
-      let comparison = 0;
-      if (sortBy === "name") {
-        comparison = a.name.localeCompare(b.name);
-      } else if (sortBy === "size") {
-        comparison = a.size - b.size;
-      } else if (sortBy === "date") {
-        comparison = a.modified - b.modified;
-      }
-
-      return sortOrder === "desc" ? -comparison : comparison;
+  const rows = useMemo(() => {
+    let result = downloads;
+    const q = search.trim().toLowerCase();
+    if (q) result = result.filter((f) => f.name.toLowerCase().includes(q));
+    if (format !== "all") result = result.filter((f) => ext(f.name) === format);
+    const sorted = [...result].sort((a, b) => {
+      const cmp =
+        sortBy === "name" ? a.name.localeCompare(b.name) : sortBy === "size" ? a.size - b.size : a.modified - b.modified;
+      return desc ? -cmp : cmp;
     });
+    return sorted;
+  }, [downloads, search, format, sortBy, desc]);
 
-    return result;
-  }, [downloads, search, filterType, sortBy, sortOrder]);
-
-  const toggleSort = (field: "date" | "size" | "name") => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(field);
-      setSortOrder("desc"); // default is descending
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) setDesc((d) => !d);
+    else {
+      setSortBy(key);
+      setDesc(true);
     }
   };
 
+  const copy = async (name: string) => {
+    try {
+      await navigator.clipboard.writeText(name);
+      setCopied(name);
+      toast.success("Filename copied");
+      window.setTimeout(() => setCopied((current) => (current === name ? null : current)), 1800);
+    } catch {
+      toast.error("Could not copy to clipboard");
+    }
+  };
+
+  const formats: FormatFilter[] = ["all", "flac", "mp3"];
+
   return (
-    <div className="space-y-6">
-      {/* 1. Statistics Row */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card className="relative overflow-hidden border bg-card/45 backdrop-blur-sm transition-all duration-300 hover:border-primary/25 hover:shadow-lg hover:shadow-primary/5">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                <Music className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Total Tracks</p>
-                <h3 className="mt-1 text-2xl font-bold tracking-tight">{loading ? <Skeleton className="h-8 w-16" /> : stats.totalFiles}</h3>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border bg-card/45 backdrop-blur-sm transition-all duration-300 hover:border-cyan-500/25 hover:shadow-lg hover:shadow-cyan-500/5">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400">
-                <HardDrive className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cumulative Size</p>
-                <h3 className="mt-1 text-2xl font-bold tracking-tight">{loading ? <Skeleton className="h-8 w-24" /> : stats.totalSize}</h3>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border bg-card/45 backdrop-blur-sm transition-all duration-300 hover:border-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/5">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400">
-                <Disc className="h-6 w-6 animate-spin-slow" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lossless (FLAC)</p>
-                <h3 className="mt-1 text-2xl font-bold tracking-tight">{loading ? <Skeleton className="h-8 w-16" /> : stats.flacCount}</h3>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden border bg-card/45 backdrop-blur-sm transition-all duration-300 hover:border-violet-500/25 hover:shadow-lg hover:shadow-violet-500/5">
-          <CardContent className="p-5">
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
-                <FileAudio className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Compressed (MP3)</p>
-                <h3 className="mt-1 text-2xl font-bold tracking-tight">{loading ? <Skeleton className="h-8 w-16" /> : stats.mp3Count}</h3>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Files" value={loading ? "—" : stats.count} Icon={Music} tone="primary" />
+        <StatCard label="Total size" value={loading ? "—" : stats.size} Icon={HardDrive} tone="info" />
+        <StatCard label="Lossless" value={loading ? "—" : stats.flac} Icon={Disc3} tone="info" hint="FLAC" />
+        <StatCard label="Compressed" value={loading ? "—" : stats.mp3} Icon={FileAudio} tone="success" hint="MP3" />
       </div>
 
-      {/* 2. Controls Panel */}
-      <div className="flex flex-col gap-4 rounded-xl border bg-card/30 p-4 backdrop-blur-sm md:flex-row md:items-center">
-        {/* Search */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input 
-            placeholder="Search completed downloads by filename..."
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-background/50 border-input/60 focus-visible:ring-primary/45"
+            placeholder="Search downloads by filename…"
+            className="pl-9"
+            aria-label="Search downloads"
           />
         </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="flex rounded-lg border bg-background/40 p-1">
-            <Button
-              variant={filterType === "all" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setFilterType("all")}
-              className="h-8 text-xs px-3 rounded-md"
-            >
-              All Types
-            </Button>
-            <Button
-              variant={filterType === "flac" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setFilterType("flac")}
-              className="h-8 text-xs px-3 rounded-md text-cyan-400"
-            >
-              FLAC
-            </Button>
-            <Button
-              variant={filterType === "mp3" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setFilterType("mp3")}
-              className="h-8 text-xs px-3 rounded-md text-emerald-400"
-            >
-              MP3
-            </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
+            {formats.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setFormat(value)}
+                className={cn(
+                  "rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  format === value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {value === "all" ? "All" : value.toUpperCase()}
+              </button>
+            ))}
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={onRefresh}
-            disabled={loading}
-            className="h-9 w-9 bg-background/50"
-            title="Refresh downloads list"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <Button variant="outline" size="icon" onClick={onRefresh} disabled={loading} aria-label="Refresh downloads" title="Refresh">
+            <RotateCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden />
           </Button>
         </div>
       </div>
 
-      {/* 3. Main File Browser Table */}
-      <div className="overflow-hidden rounded-xl border bg-card/25 backdrop-blur-sm">
-        {loading ? (
-          <div className="p-8 space-y-4">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
+      {loading ? (
+        <div className="space-y-2 rounded-xl border border-border bg-card p-4">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-10 w-full" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          icon={FileAudio}
+          title={downloads.length === 0 ? "No downloads yet" : "No files match your filters"}
+          detail={
+            downloads.length === 0
+              ? "Completed transfers appear here once a run finishes downloading tracks."
+              : "Try a different search term or the “All” format filter."
+          }
+        />
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <div className="hidden items-center gap-4 border-b border-border bg-muted/30 px-4 py-2.5 text-[0.7rem] font-semibold uppercase tracking-wider text-muted-foreground sm:flex">
+            <button type="button" onClick={() => toggleSort("name")} className="flex flex-1 items-center gap-1 hover:text-foreground">
+              File name <ArrowUpDown className="h-3 w-3" aria-hidden />
+            </button>
+            <span className="w-16">Format</span>
+            <button type="button" onClick={() => toggleSort("size")} className="flex w-24 items-center gap-1 hover:text-foreground">
+              Size <ArrowUpDown className="h-3 w-3" aria-hidden />
+            </button>
+            <button type="button" onClick={() => toggleSort("date")} className="flex w-44 items-center gap-1 hover:text-foreground">
+              Modified <ArrowUpDown className="h-3 w-3" aria-hidden />
+            </button>
+            <span className="w-8" />
           </div>
-        ) : filteredAndSorted.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center border-dashed rounded-xl m-2 border-muted">
-            <SlidersHorizontal className="h-10 w-10 text-muted-foreground/60 mb-3" />
-            <h4 className="font-semibold text-lg">No downloaded tracks match filters</h4>
-            <p className="text-sm text-muted-foreground max-w-sm mt-1">
-              Try adjusting your search query, selecting "All Types" or verify files are active in your storage directory.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b bg-muted/20 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  <th className="py-4 px-5">
-                    <button 
-                      onClick={() => toggleSort("name")}
-                      className="flex items-center gap-1.5 hover:text-foreground"
-                    >
-                      Track File Name
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="py-4 px-5 w-28">Format</th>
-                  <th className="py-4 px-5 w-36">
-                    <button 
-                      onClick={() => toggleSort("size")}
-                      className="flex items-center gap-1.5 hover:text-foreground"
-                    >
-                      File Size
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="py-4 px-5 w-52">
-                    <button 
-                      onClick={() => toggleSort("date")}
-                      className="flex items-center gap-1.5 hover:text-foreground"
-                    >
-                      Modified Time
-                      <ArrowUpDown className="h-3 w-3" />
-                    </button>
-                  </th>
-                  <th className="py-4 px-5 w-24 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {filteredAndSorted.map((file, idx) => {
-                  const isFlac = file.name.toLowerCase().endsWith(".flac");
-                  const isMp3 = file.name.toLowerCase().endsWith(".mp3");
-                  
-                  return (
-                    <tr 
-                      key={idx} 
-                      className="group transition-colors duration-150 hover:bg-muted/15"
-                    >
-                      <td className="py-3 px-5 font-medium">
-                        <div className="flex items-center gap-3">
-                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
-                            isFlac ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" :
-                            isMp3 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                            "bg-primary/10 border-primary/20 text-primary"
-                          }`}>
-                            <FileAudio className="h-4.5 w-4.5" />
-                          </div>
-                          <span className="font-mono text-xs break-all leading-relaxed select-all">
-                            {file.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-5">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          isFlac ? "bg-cyan-500/10 border-cyan-500/20 text-cyan-400" :
-                          isMp3 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                          "bg-muted border-muted text-muted-foreground"
-                        }`}>
-                          {isFlac ? "FLAC" : isMp3 ? "MP3" : "AUDIO"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-5 text-muted-foreground font-medium">
-                        {getHumanSize(file.size)}
-                      </td>
-                      <td className="py-3 px-5 text-muted-foreground text-xs font-medium">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
-                          {file.modified > 0 
-                            ? new Date(file.modified * 1000).toLocaleString() 
-                            : "Unknown"
-                          }
-                        </div>
-                      </td>
-                      <td className="py-3 px-5 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleCopy(file.name, idx)}
-                          className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-60 group-hover:opacity-100 transition-opacity"
-                          title="Copy file name to clipboard"
-                        >
-                          {copiedIndex === idx ? (
-                            <Check className="h-4 w-4 text-emerald-400" />
-                          ) : (
-                            <Copy className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      <div className="text-right text-xs text-muted-foreground font-medium">
-        Showing {filteredAndSorted.length} of {downloads.length} completed tracks.
-      </div>
+          <ul className="max-h-[calc(100vh-22rem)] divide-y divide-border overflow-y-auto scrollbar-thin">
+            {rows.map((file) => (
+              <li key={file.name} className="group flex items-center gap-4 px-4 py-2.5 transition-colors hover:bg-muted/40">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <FileAudio className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="truncate font-mono text-xs text-foreground" title={file.name}>
+                    {file.name}
+                  </span>
+                </div>
+                <span className={cn("hidden w-16 shrink-0 sm:block", "text-center")}>
+                  <span className={cn("rounded-full px-2 py-0.5 text-[0.7rem] font-medium", TONE_SOFT[formatTone(file.name)])}>
+                    {ext(file.name).toUpperCase() || "—"}
+                  </span>
+                </span>
+                <span className="tabular hidden w-24 shrink-0 text-xs text-muted-foreground sm:block">{humanSize(file.size)}</span>
+                <span className="hidden w-44 shrink-0 text-xs text-muted-foreground md:block">
+                  {file.modified > 0 ? new Date(file.modified * 1000).toLocaleString() : "Unknown"}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => copy(file.name)}
+                  className="h-8 w-8 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground group-hover:opacity-100"
+                  aria-label={`Copy ${file.name}`}
+                  title="Copy filename"
+                >
+                  {copied === file.name ? <Check className="h-4 w-4 text-success" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-right text-xs text-muted-foreground">
+        Showing {rows.length} of {downloads.length} completed files
+      </p>
     </div>
   );
-};
+}
