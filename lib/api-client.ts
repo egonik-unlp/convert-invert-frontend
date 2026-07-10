@@ -49,6 +49,15 @@ export interface PipelineState {
   lastRun?: LastRun | null;
 }
 
+export interface ActiveDownload {
+  judgeSubmissionId: number;
+  trackDbId?: number;
+  filename?: string;
+  username?: string;
+  progress: number;
+  status?: string;
+}
+
 export interface AppConfig {
   judgeThreshold: number;
   auth: {
@@ -251,6 +260,21 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE}/downloads`, { headers: authHeaders() });
     if (!res.ok) return [];
     return res.json();
+  },
+
+  async getActiveDownloads(): Promise<ActiveDownload[]> {
+    const res = await fetchWithTimeout(`${API_BASE}/downloads/active`, { headers: authHeaders() });
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async cancelDownload(id: number): Promise<void> {
+    const res = await fetchWithTimeout(`${API_BASE}/downloads/cancel`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ id }),
+    });
+    await handleResponse(res, "Failed to cancel download");
   },
 
   async getPipeline(): Promise<PipelineState> {

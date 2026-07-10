@@ -22,7 +22,7 @@ export const NAV: NavItem[] = [
   { id: "library", label: "Library", Icon: ListMusic, hint: "Every track and its stage" },
   { id: "playlists", label: "Playlists", Icon: Music4, hint: "Start a Spotify sync" },
   { id: "downloads", label: "Downloads", Icon: DownloadCloud, hint: "Completed audio files" },
-  { id: "diagnostics", label: "Diagnostics", Icon: Server, hint: "Workers and tuning" },
+  { id: "diagnostics", label: "Manage", Icon: Server, hint: "Workers, downloads & controls" },
   { id: "logs", label: "Logs", Icon: Terminal, hint: "Live telemetry" },
 ];
 

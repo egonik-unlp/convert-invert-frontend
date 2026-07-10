@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, ExternalLink, Loader2, Power, Server, Square, TriangleAlert, X } from "lucide-react";
+import { Activity, DownloadCloud, ExternalLink, Loader2, Power, Server, Square, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,17 +8,22 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { StatCard } from "@/components/StatCard";
 import { useAppConfig } from "@/hooks/useAppConfig";
-import { api } from "@/lib/api-client";
+import { api, type ActiveDownload } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { StartRequest, WorkerInfo } from "@/types";
 
 const numberOrUndefined = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
+
+// Soulseek filenames are Windows-style paths; show just the file name.
+const baseName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 export function WorkersView() {
   const { tuning } = useAppConfig();
   const [workers, setWorkers] = useState<WorkerInfo[]>([]);
   const [queueLen, setQueueLen] = useState(0);
   const [failedCount, setFailedCount] = useState(0);
+  const [active, setActive] = useState<ActiveDownload[]>([]);
+  const [cancelling, setCancelling] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,15 +35,29 @@ export function WorkersView() {
 
   const fetchWorkers = async () => {
     try {
-      const data = await api.getWorkers();
+      const [data, activeDownloads] = await Promise.all([api.getWorkers(), api.getActiveDownloads()]);
       setWorkers(data.workers);
       setQueueLen(data.queue_len);
       setFailedCount(data.failed_count);
+      setActive(activeDownloads);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch workers");
     } finally {
       setInitialLoading(false);
+    }
+  };
+
+  const cancelDownload = async (id: number, label: string) => {
+    setCancelling((current) => [...current, id]);
+    try {
+      await api.cancelDownload(id);
+      setActive((current) => current.filter((d) => d.judgeSubmissionId !== id));
+      toast.success(`Cancelling ${label}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel download");
+    } finally {
+      setCancelling((current) => current.filter((x) => x !== id));
     }
   };
 
@@ -130,9 +149,14 @@ export function WorkersView() {
               Traces
             </a>
           </Button>
-          <Button variant="destructive" disabled={busy || workers.length === 0} onClick={stopAll}>
+          <Button
+            variant="destructive"
+            disabled={busy || workers.length === 0}
+            onClick={stopAll}
+            title="Stop every worker and clear the queued chunks for this sync"
+          >
             <Square className="h-4 w-4" aria-hidden />
-            Stop all
+            Stop sync
           </Button>
         </div>
       </div>
@@ -144,6 +168,52 @@ export function WorkersView() {
           The sharing sidecar and a worker are configured with the same Soulseek account, which can trigger a ban.
         </p>
       ) : null}
+
+      <div className="rounded-xl border border-border bg-card">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+          <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <DownloadCloud className="h-4 w-4 text-info" aria-hidden />
+            Active downloads
+            <span className="tabular rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{active.length}</span>
+          </p>
+        </div>
+        {active.length === 0 ? (
+          <p className="px-4 py-6 text-center text-xs text-muted-foreground">
+            No transfers in flight. They appear here while a sync is downloading.
+          </p>
+        ) : (
+          <ul className="max-h-72 divide-y divide-border overflow-y-auto scrollbar-thin">
+            {active.map((d) => (
+              <li key={d.judgeSubmissionId} className="flex items-center gap-3 px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-xs text-foreground" title={d.filename ?? ""}>
+                    {d.filename ? baseName(d.filename) : `#${d.judgeSubmissionId}`}
+                  </p>
+                  <p className="truncate text-[0.7rem] text-muted-foreground">
+                    {d.username ? `${d.username} · ` : ""}
+                    {d.status ?? "queued"} · {d.progress}%
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  disabled={cancelling.includes(d.judgeSubmissionId)}
+                  aria-label={`Cancel download ${d.filename ? baseName(d.filename) : d.judgeSubmissionId}`}
+                  title="Cancel this download"
+                  onClick={() => cancelDownload(d.judgeSubmissionId, d.filename ? baseName(d.filename) : `#${d.judgeSubmissionId}`)}
+                >
+                  {cancelling.includes(d.judgeSubmissionId) ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  ) : (
+                    <X className="h-4 w-4" aria-hidden />
+                  )}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
         <div className="space-y-4 rounded-xl border border-border bg-card p-5">

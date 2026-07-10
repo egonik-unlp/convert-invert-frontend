@@ -23,6 +23,7 @@ import {
   type GlobalStats,
   type LogEntry,
   type NetworkStats,
+  type Playlist,
   type StartRequest,
   type Track,
 } from "@/types";
@@ -70,7 +71,7 @@ const VIEW_META: Record<View, { title: string; subtitle: string }> = {
   library: { title: "Library", subtitle: "Every track and its current stage" },
   playlists: { title: "Playlists", subtitle: "Start a new Spotify sync" },
   downloads: { title: "Downloads", subtitle: "Completed audio files" },
-  diagnostics: { title: "Diagnostics", subtitle: "Workers and server tuning" },
+  diagnostics: { title: "Manage", subtitle: "Workers, active downloads, and server tuning" },
   logs: { title: "Logs", subtitle: "Live system telemetry" },
 };
 
@@ -109,6 +110,8 @@ function Dashboard() {
   const [downloadsPaused, setDownloadsPaused] = useState(false);
   const [pipelineBusy, setPipelineBusy] = useState(false);
   const [lastRun, setLastRun] = useState<LastRun | null>(null);
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<string>(LIBRARY_ID);
 
   const [booting, setBooting] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -141,18 +144,26 @@ function Dashboard() {
   }, []);
 
   const loadLibrary = useCallback(async () => {
-    const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE });
+    const playlist = await api.getPlaylist(selectedPlaylist, { limit: PAGE_SIZE });
     setTracks(playlist.tracks ?? []);
     setNextCursor(playlist.nextCursor);
     setLibraryLoading(false);
-  }, []);
+  }, [selectedPlaylist]);
 
   const pollLibrary = useCallback(async () => {
     // Refresh the newest page and merge, so live status updates without dropping
     // older pages the user loaded via "Load more".
-    const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE });
+    const playlist = await api.getPlaylist(selectedPlaylist, { limit: PAGE_SIZE });
     setTracks((current) => mergeTracks(current, playlist.tracks ?? []));
     setNextCursor((current) => playlist.nextCursor ?? current);
+  }, [selectedPlaylist]);
+
+  const refreshPlaylists = useCallback(async () => {
+    try {
+      setPlaylists(await api.getPlaylists());
+    } catch {
+      // Non-fatal: the filter just falls back to "All".
+    }
   }, []);
 
   const refreshPipeline = useCallback(async () => {
@@ -179,7 +190,7 @@ function Dashboard() {
     if (nextCursor == null) return;
     setLoadingMore(true);
     try {
-      const playlist = await api.getPlaylist(LIBRARY_ID, { limit: PAGE_SIZE, cursor: nextCursor });
+      const playlist = await api.getPlaylist(selectedPlaylist, { limit: PAGE_SIZE, cursor: nextCursor });
       setTracks((current) => mergeTracks(current, playlist.tracks ?? []));
       setNextCursor(playlist.nextCursor);
     } catch (err) {
@@ -187,7 +198,7 @@ function Dashboard() {
     } finally {
       setLoadingMore(false);
     }
-  }, [nextCursor]);
+  }, [nextCursor, selectedPlaylist]);
 
   const fetchDownloads = useCallback(async () => {
     setDownloadsLoading(true);
@@ -209,14 +220,24 @@ function Dashboard() {
       if (h.api !== "ONLINE" || h.db !== "CONNECTED") {
         throw new Error(h.error || `Backend reported API ${h.api}, DB ${h.db}`);
       }
-      await Promise.all([refreshStats(), loadLibrary()]);
+      await Promise.all([refreshStats(), loadLibrary(), refreshPlaylists()]);
       setStale(false);
       setBooting(false);
     } catch (err) {
       setBootError(err instanceof Error ? err.message : "Could not reach the backend");
       setBooting(false);
     }
-  }, [refreshStats, loadLibrary]);
+  }, [refreshStats, loadLibrary, refreshPlaylists]);
+
+  // Reload the library when the playlist filter changes (after the initial boot load).
+  useEffect(() => {
+    if (booting || bootError) return;
+    setLibraryLoading(true);
+    setTracks([]);
+    setNextCursor(undefined);
+    void loadLibrary().catch(() => setStale(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlaylist]);
 
   useEffect(() => {
     void boot();
@@ -231,13 +252,16 @@ function Dashboard() {
         .catch(() => setStale(true));
     void refreshPipeline();
     const interval = setInterval(tick, POLL_MS);
-    // Pipeline pause state changes rarely; poll it less often than stats/library.
-    const pipelineInterval = setInterval(() => void refreshPipeline().catch(() => {}), POLL_MS * 4);
+    // Pipeline pause state + playlist list change rarely; poll them less often than stats/library.
+    const slowInterval = setInterval(() => {
+      void refreshPipeline().catch(() => {});
+      void refreshPlaylists();
+    }, POLL_MS * 4);
     return () => {
       clearInterval(interval);
-      clearInterval(pipelineInterval);
+      clearInterval(slowInterval);
     };
-  }, [booting, bootError, refreshStats, pollLibrary, refreshPipeline]);
+  }, [booting, bootError, refreshStats, pollLibrary, refreshPipeline, refreshPlaylists]);
 
   // Downloads are fetched lazily when their view opens.
   useEffect(() => {
@@ -401,6 +425,9 @@ function Dashboard() {
                 canLoadMore={libraryFilter === "all" && nextCursor != null}
                 loadingMore={loadingMore}
                 onLoadMore={loadMore}
+                playlists={playlists}
+                selectedPlaylist={selectedPlaylist}
+                onSelectPlaylist={setSelectedPlaylist}
               />
             ) : view === "playlists" ? (
               <PlaylistsView onLaunch={handleLaunch} lastRun={lastRun} />
@@ -481,6 +508,9 @@ function LibraryView({
   canLoadMore,
   loadingMore,
   onLoadMore,
+  playlists,
+  selectedPlaylist,
+  onSelectPlaylist,
 }: {
   tracks: Track[];
   loading: boolean;
@@ -490,6 +520,9 @@ function LibraryView({
   canLoadMore: boolean;
   loadingMore: boolean;
   onLoadMore: () => void;
+  playlists: Playlist[];
+  selectedPlaylist: string;
+  onSelectPlaylist: (id: string) => void;
 }) {
   const filters: { id: LibraryFilter; label: string }[] = [
     { id: "all", label: "All" },
@@ -499,20 +532,40 @@ function LibraryView({
   ];
   return (
     <div className="space-y-4">
-      <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
-        {filters.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => onFilter(f.id)}
-            className={cn(
-              "rounded-md px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              filter === f.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {f.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => onFilter(f.id)}
+              className={cn(
+                "rounded-md px-3 py-1 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                filter === f.id ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        {playlists.length > 0 ? (
+          <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            Playlist
+            <select
+              value={selectedPlaylist}
+              onChange={(e) => onSelectPlaylist(e.target.value)}
+              className="max-w-[16rem] rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Filter library by playlist"
+            >
+              <option value="all">All playlists</option>
+              {playlists.map((pl) => (
+                <option key={pl.id} value={pl.id}>
+                  {pl.name} ({pl.trackCount})
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
 
       <TrackTable
