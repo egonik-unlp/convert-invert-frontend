@@ -97,4 +97,6 @@ export interface DownloadedFile {
   name: string;
   size: number;
   modified: number;
+  /** Playlist folder the file was filed under (absent for files in the download root). */
+  folder?: string | null;
 }

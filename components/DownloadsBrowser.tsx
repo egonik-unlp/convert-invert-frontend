@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Check, Copy, Disc3, FileAudio, HardDrive, Music, RotateCw, Search } from "lucide-react";
+import { ArrowUpDown, Check, Copy, Disc3, FileAudio, HardDrive, ListMusic, Music, RotateCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,13 +49,17 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
     const totalSize = downloads.reduce((sum, f) => sum + f.size, 0);
     const flac = downloads.filter((f) => ext(f.name) === "flac").length;
     const mp3 = downloads.filter((f) => ext(f.name) === "mp3").length;
-    return { count: downloads.length, size: humanSize(totalSize), flac, mp3 };
+    const playlists = new Set(downloads.map((f) => f.folder).filter(Boolean)).size;
+    return { count: downloads.length, size: humanSize(totalSize), flac, mp3, playlists };
   }, [downloads]);
 
   const rows = useMemo(() => {
     let result = downloads;
     const q = search.trim().toLowerCase();
-    if (q) result = result.filter((f) => f.name.toLowerCase().includes(q));
+    if (q)
+      result = result.filter(
+        (f) => f.name.toLowerCase().includes(q) || (f.folder ?? "").toLowerCase().includes(q),
+      );
     if (format !== "all") result = result.filter((f) => ext(f.name) === format);
     const sorted = [...result].sort((a, b) => {
       const cmp =
@@ -89,7 +93,13 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Files" value={loading ? "—" : stats.count} Icon={Music} tone="primary" />
+        <StatCard
+          label="Files"
+          value={loading ? "—" : stats.count}
+          Icon={Music}
+          tone="primary"
+          hint={!loading && stats.playlists > 0 ? `${stats.playlists} playlist${stats.playlists === 1 ? "" : "s"}` : undefined}
+        />
         <StatCard label="Total size" value={loading ? "—" : stats.size} Icon={HardDrive} tone="info" />
         <StatCard label="Lossless" value={loading ? "—" : stats.flac} Icon={Disc3} tone="info" hint="FLAC" />
         <StatCard label="Compressed" value={loading ? "—" : stats.mp3} Icon={FileAudio} tone="success" hint="MP3" />
@@ -161,12 +171,26 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
           </div>
           <ul className="max-h-[calc(100vh-22rem)] divide-y divide-border overflow-y-auto scrollbar-thin">
             {rows.map((file) => (
-              <li key={file.name} className="group flex items-center gap-4 px-4 py-2.5 transition-colors hover:bg-muted/40">
+              <li
+                key={`${file.folder ?? ""}/${file.name}`}
+                className="group flex items-center gap-4 px-4 py-2.5 transition-colors hover:bg-muted/40"
+              >
                 <div className="flex min-w-0 flex-1 items-center gap-3">
                   <FileAudio className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                  <span className="truncate font-mono text-xs text-foreground" title={file.name}>
-                    {file.name}
-                  </span>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="truncate font-mono text-xs text-foreground" title={file.name}>
+                      {file.name}
+                    </span>
+                    {file.folder ? (
+                      <span
+                        className="inline-flex w-fit max-w-full items-center gap-1 text-[0.7rem] text-muted-foreground"
+                        title={`Playlist: ${file.folder}`}
+                      >
+                        <ListMusic className="h-3 w-3 shrink-0" aria-hidden />
+                        <span className="truncate">{file.folder}</span>
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <span className={cn("hidden w-16 shrink-0 sm:block", "text-center")}>
                   <span className={cn("rounded-full px-2 py-0.5 text-[0.7rem] font-medium", TONE_SOFT[formatTone(file.name)])}>
