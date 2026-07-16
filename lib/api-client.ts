@@ -51,6 +51,15 @@ export interface PipelineState {
   lastRun?: LastRun | null;
 }
 
+export interface ResolvedResource {
+  kind: "playlist" | "album" | "track";
+  id: string;
+  name: string;
+  subtitle: string;
+  image?: string;
+  trackCount?: number;
+}
+
 export interface ActiveDownload {
   judgeSubmissionId: number;
   trackDbId?: number;
@@ -204,6 +213,21 @@ export const api = {
       ...config,
       tuning: { ...fallbackTuning, ...config.tuning },
     };
+  },
+
+  async resolveResource(
+    id: string,
+    kind: "playlist" | "album" | "track",
+    signal?: AbortSignal,
+  ): Promise<ResolvedResource> {
+    const params = new URLSearchParams({ id, kind });
+    // Raw fetch (not fetchWithTimeout, which overrides `signal`) so the caller's AbortController
+    // can cancel a stale in-flight preview when the input changes.
+    const res = await fetch(`${API_BASE}/resolve?${params.toString()}`, {
+      headers: authHeaders(),
+      signal,
+    });
+    return handleResponse(res, "Could not resolve that Spotify link");
   },
 
   async getPlaylists(): Promise<Playlist[]> {

@@ -10,7 +10,8 @@ import { StatCard } from "@/components/StatCard";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { api, type ActiveDownload } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { parseSpotifyResource, resourceKindLabel } from "@/lib/spotify";
+import { parseSpotifyResource } from "@/lib/spotify";
+import { SpotifyPreview } from "@/components/SpotifyPreview";
 import type { StartRequest, WorkerInfo } from "@/types";
 
 const numberOrUndefined = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
@@ -238,12 +239,8 @@ export function WorkersView() {
           <label className="block space-y-1.5 text-xs text-muted-foreground">
             Spotify URL or ID
             <Input value={playlistId} onChange={(e) => setPlaylistId(e.target.value)} placeholder="playlist / album / track link or ID" />
-            {resource ? (
-              <span className="block truncate font-mono text-[0.7rem] text-primary">
-                {resourceKindLabel(resource.kind)} · {resource.id}
-              </span>
-            ) : null}
           </label>
+          {resource ? <SpotifyPreview resource={resource} /> : null}
           <label className="block space-y-1.5 text-xs text-muted-foreground">
             Chunk size
             <Input type="number" value={chunkSize} onChange={(e) => setChunkSize(e.target.value)} placeholder="15" />

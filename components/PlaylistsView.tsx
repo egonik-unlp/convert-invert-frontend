@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { LastRun } from "@/lib/api-client";
 import { parseSpotifyResource, resourceKindLabel } from "@/lib/spotify";
+import { SpotifyPreview } from "@/components/SpotifyPreview";
 import type { StartRequest } from "@/types";
 
 interface PlaylistsViewProps {
@@ -134,12 +135,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               placeholder="https://open.spotify.com/album/…"
               className="h-11"
             />
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Resolved:</span>
-              <span className={cn("truncate font-mono", idValid ? "text-primary" : "text-muted-foreground")}>
-                {resource ? `${resourceKindLabel(resource.kind)} · ${resource.id}` : "waiting for input"}
-              </span>
-            </div>
+            {resource ? <SpotifyPreview resource={resource} /> : null}
             {touched && !idValid ? (
               <p className="flex items-center gap-1.5 text-xs text-destructive">
                 <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
