@@ -90,6 +90,8 @@ export interface StartRequest {
   port_base?: number;
   run_id_prefix?: string;
   playlist_id?: string;
+  /** Which kind of Spotify resource `playlist_id` names. Defaults to "playlist" server-side. */
+  resource_kind?: "playlist" | "album" | "track";
   chunk_size?: number;
   playlist_range_start?: number;
   playlist_range_end?: number;

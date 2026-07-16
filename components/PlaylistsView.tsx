@@ -4,36 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { LastRun } from "@/lib/api-client";
+import { parseSpotifyResource, resourceKindLabel } from "@/lib/spotify";
 import type { StartRequest } from "@/types";
 
 interface PlaylistsViewProps {
   onLaunch: (request: StartRequest) => Promise<void>;
   lastRun?: LastRun | null;
-}
-
-export function normalizeSpotifyPlaylistInput(input: string): string {
-  const trimmed = input.trim();
-  if (!trimmed) return "";
-
-  const uriMatch = trimmed.match(/^spotify:playlist:([A-Za-z0-9]+)$/);
-  if (uriMatch) return uriMatch[1];
-
-  try {
-    const url = new URL(trimmed);
-    const parts = url.pathname.split("/").filter(Boolean);
-    const playlistIndex = parts.indexOf("playlist");
-    if (playlistIndex >= 0 && parts[playlistIndex + 1]) {
-      return parts[playlistIndex + 1];
-    }
-  } catch {
-    // Not a URL; treat it as a raw playlist ID below.
-  }
-
-  return trimmed.replace(/[?#].*$/, "");
-}
-
-export function isLikelySpotifyPlaylistId(id: string): boolean {
-  return /^[A-Za-z0-9]{10,}$/.test(id);
 }
 
 const numericValue = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
@@ -47,9 +23,10 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const playlistId = useMemo(() => normalizeSpotifyPlaylistInput(rawInput), [rawInput]);
-  const idValid = isLikelySpotifyPlaylistId(playlistId);
+  const resource = useMemo(() => parseSpotifyResource(rawInput), [rawInput]);
+  const idValid = resource !== null;
   const touched = rawInput.trim().length > 0;
+  const isSingleTrack = resource?.kind === "track";
 
   const rangeValid = () => {
     const start = numericValue(rangeStart);
@@ -64,6 +41,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
     try {
       await onLaunch({
         playlist_id: lastRun.playlistId,
+        resource_kind: lastRun.resourceKind ?? "playlist",
         worker_count: lastRun.workerCount,
         chunk_size: lastRun.chunkSize,
         username_prefix: "worker",
@@ -80,24 +58,26 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const launch = async () => {
     const workers = Number.parseInt(workerCount, 10);
     const chunk = Number.parseInt(chunkSize, 10);
-    if (!idValid || workers < 1 || workers > 32 || chunk < 1 || chunk > 1000 || !rangeValid()) return;
+    if (!resource || workers < 1 || workers > 32 || chunk < 1 || chunk > 1000 || !rangeValid()) return;
 
     setLaunching(true);
     setError(null);
     try {
       await onLaunch({
-        playlist_id: playlistId,
+        playlist_id: resource.id,
+        resource_kind: resource.kind,
         worker_count: workers,
         chunk_size: chunk,
-        playlist_range_start: numericValue(rangeStart),
-        playlist_range_end: numericValue(rangeEnd),
+        // A range only makes sense for multi-track resources; skip it for single tracks.
+        playlist_range_start: isSingleTrack ? undefined : numericValue(rangeStart),
+        playlist_range_end: isSingleTrack ? undefined : numericValue(rangeEnd),
         username_prefix: "worker",
         port_base: 41000,
         run_id_prefix: "web-trigger",
       });
       setRawInput("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to launch playlist download");
+      setError(err instanceof Error ? err.message : "Failed to launch download");
     } finally {
       setLaunching(false);
     }
@@ -113,7 +93,8 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               Resume last run
             </p>
             <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={lastRun.playlistId}>
-              {lastRun.playlistId} · {lastRun.workerCount} worker{lastRun.workerCount === 1 ? "" : "s"} · chunk {lastRun.chunkSize}
+              {resourceKindLabel(lastRun.resourceKind ?? "playlist")} {lastRun.playlistId} · {lastRun.workerCount} worker
+              {lastRun.workerCount === 1 ? "" : "s"} · chunk {lastRun.chunkSize}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">Already-downloaded tracks are skipped, so this safely continues where it stopped.</p>
           </div>
@@ -130,13 +111,14 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
           Start a Spotify sync
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Paste a Spotify playlist link or ID. Workers fetch its tracks, search Soulseek, and download the best match.
+          Paste a Spotify playlist, album, or track link (or ID). Workers fetch its tracks, search Soulseek, and download the
+          best match.
         </p>
 
         <div className="mt-5 space-y-4">
           <div className="space-y-2">
             <label htmlFor="playlist-input" className="text-sm font-medium text-foreground">
-              Playlist URL or ID
+              Spotify URL or ID
             </label>
             <Input
               id="playlist-input"
@@ -149,21 +131,24 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && idValid && !launching) void launch();
               }}
-              placeholder="https://open.spotify.com/playlist/…"
+              placeholder="https://open.spotify.com/album/…"
               className="h-11"
             />
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">Resolved ID:</span>
+              <span className="text-muted-foreground">Resolved:</span>
               <span className={cn("truncate font-mono", idValid ? "text-primary" : "text-muted-foreground")}>
-                {playlistId || "waiting for input"}
+                {resource ? `${resourceKindLabel(resource.kind)} · ${resource.id}` : "waiting for input"}
               </span>
             </div>
             {touched && !idValid ? (
               <p className="flex items-center gap-1.5 text-xs text-destructive">
                 <CircleAlert className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                Enter a Spotify playlist URL or a raw playlist ID.
+                Enter a Spotify playlist, album, or track URL (or a raw ID).
               </p>
             ) : null}
+            <p className="text-xs text-muted-foreground">
+              A bare ID is treated as a playlist — paste the full album/track link to download those.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -175,13 +160,13 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               Chunk
               <Input type="number" min={1} max={1000} value={chunkSize} onChange={(e) => setChunkSize(e.target.value)} />
             </label>
-            <label className="space-y-1.5 text-xs text-muted-foreground">
+            <label className={cn("space-y-1.5 text-xs text-muted-foreground", isSingleTrack && "opacity-50")}>
               Range start
-              <Input type="number" min={0} value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} placeholder="0" />
+              <Input type="number" min={0} value={rangeStart} disabled={isSingleTrack} onChange={(e) => setRangeStart(e.target.value)} placeholder="0" />
             </label>
-            <label className="space-y-1.5 text-xs text-muted-foreground">
+            <label className={cn("space-y-1.5 text-xs text-muted-foreground", isSingleTrack && "opacity-50")}>
               Range end
-              <Input type="number" min={0} value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} placeholder="all" />
+              <Input type="number" min={0} value={rangeEnd} disabled={isSingleTrack} onChange={(e) => setRangeEnd(e.target.value)} placeholder="all" />
             </label>
           </div>
 

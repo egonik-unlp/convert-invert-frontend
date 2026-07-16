@@ -10,6 +10,7 @@ import { StatCard } from "@/components/StatCard";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { api, type ActiveDownload } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { parseSpotifyResource, resourceKindLabel } from "@/lib/spotify";
 import type { StartRequest, WorkerInfo } from "@/types";
 
 const numberOrUndefined = (value: string) => (value.trim() ? Number.parseInt(value, 10) : undefined);
@@ -67,13 +68,16 @@ export function WorkersView() {
     return () => clearInterval(interval);
   }, []);
 
+  const resource = parseSpotifyResource(playlistId);
+
   const deploy = async () => {
     setBusy(true);
     try {
       const req: StartRequest = {
         worker_count: Number.parseInt(workerCount, 10),
         port_base: Number.parseInt(portBase, 10),
-        playlist_id: playlistId.trim() || undefined,
+        playlist_id: resource?.id ?? (playlistId.trim() || undefined),
+        resource_kind: resource?.kind,
         chunk_size: numberOrUndefined(chunkSize),
         username_prefix: "worker",
         run_id_prefix: "web-trigger",
@@ -232,8 +236,13 @@ export function WorkersView() {
             </label>
           </div>
           <label className="block space-y-1.5 text-xs text-muted-foreground">
-            Playlist ID
-            <Input value={playlistId} onChange={(e) => setPlaylistId(e.target.value)} placeholder="Spotify playlist ID" />
+            Spotify URL or ID
+            <Input value={playlistId} onChange={(e) => setPlaylistId(e.target.value)} placeholder="playlist / album / track link or ID" />
+            {resource ? (
+              <span className="block truncate font-mono text-[0.7rem] text-primary">
+                {resourceKindLabel(resource.kind)} · {resource.id}
+              </span>
+            ) : null}
           </label>
           <label className="block space-y-1.5 text-xs text-muted-foreground">
             Chunk size

@@ -42,6 +42,8 @@ export interface LastRun {
   workerCount: number;
   chunkSize: number;
   portBase: number;
+  /** "playlist" | "album" | "track" — older snapshots may omit this; treat as "playlist". */
+  resourceKind?: "playlist" | "album" | "track";
 }
 
 export interface PipelineState {
