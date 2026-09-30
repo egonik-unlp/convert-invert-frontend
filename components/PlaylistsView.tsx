@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CircleAlert, Link2, Loader2, Play, RotateCw, Sparkles } from "lucide-react";
+import { CircleAlert, Link2, Loader2, Play, Repeat, RotateCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const [chunkSize, setChunkSize] = useState("15");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
+  const [enhancedRetries, setEnhancedRetries] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +73,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
         // A range only makes sense for multi-track resources; skip it for single tracks.
         playlist_range_start: isSingleTrack ? undefined : numericValue(rangeStart),
         playlist_range_end: isSingleTrack ? undefined : numericValue(rangeEnd),
+        enhanced_retries: enhancedRetries,
         username_prefix: "worker",
         port_base: 41000,
         run_id_prefix: "web-trigger",
@@ -165,6 +167,30 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               <Input type="number" min={0} value={rangeEnd} disabled={isSingleTrack} onChange={(e) => setRangeEnd(e.target.value)} placeholder="all" />
             </label>
           </div>
+
+          <label
+            className={cn(
+              "flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors",
+              enhancedRetries ? "border-primary/50 bg-primary/5" : "border-border hover:bg-muted/40",
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={enhancedRetries}
+              onChange={(e) => setEnhancedRetries(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <span className="min-w-0">
+              <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <Repeat className="h-3.5 w-3.5 text-primary" aria-hidden />
+                Extra retries
+              </span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Try more sources per song, search harder, and wait longer on slow peers. Slower, but
+                rescues tracks that would otherwise fail.
+              </span>
+            </span>
+          </label>
 
           {!rangeValid() ? (
             <p className="text-xs text-destructive">Range start must be less than range end.</p>

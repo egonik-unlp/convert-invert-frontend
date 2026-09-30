@@ -9,6 +9,58 @@ export enum TrackStatus {
   FAILED = "FAILED",
 }
 
+// The LLM judge's verdict taxonomy, in severity order. It is trained on exactly
+// these four — `not_music` and `uncertain` exist for human labellers but were
+// never taught to the model, so they can never come back.
+export type JudgementLabel = "exact" | "wrong_version" | "wrong_artist" | "different";
+
+// One judge's verdict on one candidate. Judges that only produce a number
+// (levenshtein, relative_mi) leave `label` and `model` unset.
+export interface Judgement {
+  id: number;
+  judge: string;
+  model?: string;
+  label?: JudgementLabel | string;
+  score: number;
+  accepted: boolean;
+  latencyMs: number;
+  promptVersion?: string;
+  // The judge's literal reply, kept for auditing a surprising verdict.
+  raw?: string;
+  // Present when the judge failed and a fallback score stood in for it.
+  error?: string;
+  /** Unix seconds. */
+  createdAt: number;
+}
+
+// A verdict plus the track and file it is about — the row shape of the
+// judgements feed, which reads across tracks rather than within one.
+export interface JudgementFeedItem extends Judgement {
+  submissionId: number;
+  trackDbId: number;
+  title: string;
+  artist: string;
+  album: string;
+  filename: string;
+  username: string;
+}
+
+export interface JudgementSummary {
+  total: number;
+  accepted: number;
+  errors: number;
+  avgLatencyMs: number;
+  p95LatencyMs: number;
+  labels: { label: string; count: number }[];
+  judges: { judge: string; model?: string; count: number; accepted: number; errors: number; avgLatencyMs: number }[];
+}
+
+export interface JudgementsPage {
+  summary: JudgementSummary;
+  items: JudgementFeedItem[];
+  nextCursor?: number;
+}
+
 export interface Candidate {
   id: number;
   fileId: number;
@@ -17,6 +69,9 @@ export interface Candidate {
   score: number;
   // Experimental relative-MI score recorded alongside the primary score (api.rs).
   relativeMiScore?: number;
+  // The deciding judge's label, hoisted out of `judgements` by the API.
+  label?: JudgementLabel | string;
+  judgements: Judgement[];
 }
 
 export interface LogEntry {
@@ -95,6 +150,8 @@ export interface StartRequest {
   chunk_size?: number;
   playlist_range_start?: number;
   playlist_range_end?: number;
+  /** Opt-in "extra retries": more download/search attempts and longer per-download timeouts. */
+  enhanced_retries?: boolean;
 }
 
 export interface DownloadedFile {

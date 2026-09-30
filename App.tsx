@@ -44,6 +44,7 @@ import { TrackTable } from "@/components/TrackTable";
 import { PlaylistsView } from "@/components/PlaylistsView";
 import { DownloadsBrowser } from "@/components/DownloadsBrowser";
 import { WorkersView } from "@/components/WorkersView";
+import { JudgementsView } from "@/components/JudgementsView";
 import { CandidateModal } from "@/components/CandidateModal";
 
 const LIBRARY_ID = "all";
@@ -74,6 +75,7 @@ const emptyNetwork: NetworkStats = { status: "DISCONNECTED", user: "—", latenc
 const VIEW_META: Record<View, { title: string; subtitle: string }> = {
   overview: { title: "Overview", subtitle: "Run health and active transfers" },
   library: { title: "Library", subtitle: "Every track and its current stage" },
+  judgements: { title: "Judgements", subtitle: "How the judge is ruling on candidates" },
   playlists: { title: "Playlists", subtitle: "Start a new Spotify sync" },
   downloads: { title: "Downloads", subtitle: "Completed audio files" },
   diagnostics: { title: "Manage", subtitle: "Workers, active downloads, and server tuning" },
@@ -439,6 +441,8 @@ function Dashboard() {
                 selectedPlaylist={selectedPlaylist}
                 onSelectPlaylist={setSelectedPlaylist}
               />
+            ) : view === "judgements" ? (
+              <JudgementsView />
             ) : view === "playlists" ? (
               <PlaylistsView onLaunch={handleLaunch} lastRun={lastRun} />
             ) : view === "downloads" ? (

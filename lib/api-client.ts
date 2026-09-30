@@ -1,4 +1,14 @@
-import { GlobalStats, NetworkStats, Playlist, Candidate, LogEntry, WorkerInfo, StartRequest, DownloadedFile } from "@/types";
+import {
+  GlobalStats,
+  NetworkStats,
+  Playlist,
+  Candidate,
+  JudgementsPage,
+  LogEntry,
+  WorkerInfo,
+  StartRequest,
+  DownloadedFile,
+} from "@/types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 const API_KEY = import.meta.env.VITE_API_KEY || "";
@@ -86,8 +96,33 @@ export interface Activity {
   downloading: ActivityItem[];
 }
 
+export interface JudgeConfig {
+  /** "levenshtein" | "smol-judge" */
+  backend: string;
+  model?: string;
+  /** True once the judge is an LLM, which is what makes the label UI meaningful. */
+  isLlm: boolean;
+  /** The labels this judge can emit, in severity order. Empty for scalar judges. */
+  labels: string[];
+  /** The ollama the judge talks to. Only set for the LLM backend. */
+  url?: string;
+  /** "env" = from the deployment config, "override" = switched from here. */
+  source: string;
+  /** What clearing the override would fall back to. */
+  envBackend: string;
+}
+
+export const fallbackJudge: JudgeConfig = {
+  backend: "levenshtein",
+  isLlm: false,
+  labels: [],
+  source: "env",
+  envBackend: "levenshtein",
+};
+
 export interface AppConfig {
   judgeThreshold: number;
+  judge: JudgeConfig;
   auth: {
     scheme: string;
     header: string;
@@ -204,6 +239,7 @@ export const api = {
     if (res.status === 404) {
       return {
         judgeThreshold: 0.75,
+        judge: fallbackJudge,
         auth: { scheme: "api_key", header: "X-API-Key" },
         tuning: fallbackTuning,
       };
@@ -211,6 +247,8 @@ export const api = {
     const config = await handleResponse(res, "Config unavailable");
     return {
       ...config,
+      // An older API predates the judge block; treat it as the scalar judge it was.
+      judge: { ...fallbackJudge, ...config.judge },
       tuning: { ...fallbackTuning, ...config.tuning },
     };
   },
@@ -252,6 +290,45 @@ export const api = {
     const res = await fetchWithTimeout(`${API_BASE}/tracks/${id}/candidates`, { headers: authHeaders() });
     if (!res.ok) return [];
     return res.json();
+  },
+
+  /** Switch the judge. Applies to the next run, not one already in flight. */
+  async setJudge(backend: string, url?: string): Promise<JudgeConfig> {
+    const res = await fetchWithTimeout(`${API_BASE}/judge`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ backend, url }),
+    });
+    return handleResponse(res, "Failed to switch the judge");
+  },
+
+  /** Drop the override and go back to what the deployment configures. */
+  async resetJudge(): Promise<JudgeConfig> {
+    const res = await fetchWithTimeout(`${API_BASE}/judge/reset`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    return handleResponse(res, "Failed to reset the judge");
+  },
+
+  async getJudgements(
+    opts: { limit?: number; cursor?: number; judge?: string; label?: string; accepted?: boolean } = {},
+  ): Promise<JudgementsPage> {
+    const params = new URLSearchParams();
+    if (opts.limit != null) params.set("limit", String(opts.limit));
+    if (opts.cursor != null) params.set("cursor", String(opts.cursor));
+    if (opts.judge) params.set("judge", opts.judge);
+    if (opts.label) params.set("label", opts.label);
+    if (opts.accepted != null) params.set("accepted", String(opts.accepted));
+    const qs = params.toString();
+    // The summary aggregates over every judgement, so this can outrun the
+    // default timeout on a large history.
+    const res = await fetchWithTimeout(
+      `${API_BASE}/judgements${qs ? `?${qs}` : ""}`,
+      { headers: authHeaders() },
+      8000,
+    );
+    return handleResponse(res, "Judgements unavailable");
   },
 
   async getLogs(): Promise<LogEntry[]> {

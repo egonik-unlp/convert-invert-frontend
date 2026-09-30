@@ -1,5 +1,6 @@
 import {
   DownloadCloud,
+  Gavel,
   LayoutDashboard,
   ListMusic,
   Music4,
@@ -8,7 +9,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type View = "overview" | "library" | "playlists" | "downloads" | "diagnostics" | "logs";
+export type View =
+  | "overview"
+  | "library"
+  | "judgements"
+  | "playlists"
+  | "downloads"
+  | "diagnostics"
+  | "logs";
 
 export interface NavItem {
   id: View;
@@ -20,6 +28,7 @@ export interface NavItem {
 export const NAV: NavItem[] = [
   { id: "overview", label: "Overview", Icon: LayoutDashboard, hint: "Run health at a glance" },
   { id: "library", label: "Library", Icon: ListMusic, hint: "Every track and its stage" },
+  { id: "judgements", label: "Judgements", Icon: Gavel, hint: "How the judge is ruling" },
   { id: "playlists", label: "Playlists", Icon: Music4, hint: "Start a Spotify sync" },
   { id: "downloads", label: "Downloads", Icon: DownloadCloud, hint: "Completed audio files" },
   { id: "diagnostics", label: "Manage", Icon: Server, hint: "Workers, downloads & controls" },
