@@ -152,6 +152,8 @@ export interface StartRequest {
   playlist_range_end?: number;
   /** Opt-in "extra retries": more download/search attempts and longer per-download timeouts. */
   enhanced_retries?: boolean;
+  /** Continue the resource with this many tracks picked by the next-track model and download them too. */
+  extend_count?: number;
 }
 
 export interface DownloadedFile {

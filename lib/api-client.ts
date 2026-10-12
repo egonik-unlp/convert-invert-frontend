@@ -54,6 +54,8 @@ export interface LastRun {
   portBase: number;
   /** "playlist" | "album" | "track" — older snapshots may omit this; treat as "playlist". */
   resourceKind?: "playlist" | "album" | "track";
+  /** Set when the run was extended by the next-track model. */
+  extendCount?: number;
 }
 
 export interface PipelineState {
@@ -68,6 +70,24 @@ export interface ResolvedResource {
   subtitle: string;
   image?: string;
   trackCount?: number;
+}
+
+export interface ExtensionTrack {
+  id: string;
+  name: string;
+  artist: string;
+}
+
+/** What the next-track model would append to a Spotify resource. */
+export interface ExtensionPreview {
+  name: string;
+  /** Tracks on the resource itself. */
+  seedCount: number;
+  /** Seeds found in the model's library — only these steer the extension. */
+  seedsMatched: number;
+  /** Size of the dominant-mood core the extension starts from. */
+  coreSize: number;
+  tracks: ExtensionTrack[];
 }
 
 export interface ActiveDownload {
@@ -266,6 +286,16 @@ export const api = {
       signal,
     });
     return handleResponse(res, "Could not resolve that Spotify link");
+  },
+
+  async previewExtension(
+    id: string,
+    kind: "playlist" | "album" | "track",
+    count: number,
+  ): Promise<ExtensionPreview> {
+    const params = new URLSearchParams({ id, kind, count: String(count) });
+    const res = await fetch(`${API_BASE}/extend?${params.toString()}`, { headers: authHeaders() });
+    return handleResponse(res, "Could not extend that Spotify link");
   },
 
   async getPlaylists(): Promise<Playlist[]> {

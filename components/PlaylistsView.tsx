@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { CircleAlert, Link2, Loader2, Play, Repeat, RotateCw, Sparkles } from "lucide-react";
+import { CircleAlert, Infinity as InfinityIcon, Link2, Loader2, Play, Repeat, RotateCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { LastRun } from "@/lib/api-client";
+import { api, type ExtensionPreview, type LastRun } from "@/lib/api-client";
 import { parseSpotifyResource, resourceKindLabel } from "@/lib/spotify";
 import { SpotifyPreview } from "@/components/SpotifyPreview";
 import type { StartRequest } from "@/types";
@@ -22,6 +22,10 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
   const [enhancedRetries, setEnhancedRetries] = useState(false);
+  const [extend, setExtend] = useState(false);
+  const [extendCount, setExtendCount] = useState("30");
+  const [preview, setPreview] = useState<ExtensionPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +33,9 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const idValid = resource !== null;
   const touched = rawInput.trim().length > 0;
   const isSingleTrack = resource?.kind === "track";
+
+  const extendValue = Number.parseInt(extendCount, 10);
+  const extendValid = !extend || (extendValue >= 1 && extendValue <= 500);
 
   const rangeValid = () => {
     const start = numericValue(rangeStart);
@@ -44,6 +51,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
       await onLaunch({
         playlist_id: lastRun.playlistId,
         resource_kind: lastRun.resourceKind ?? "playlist",
+        extend_count: lastRun.extendCount,
         worker_count: lastRun.workerCount,
         chunk_size: lastRun.chunkSize,
         username_prefix: "worker",
@@ -60,7 +68,7 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
   const launch = async () => {
     const workers = Number.parseInt(workerCount, 10);
     const chunk = Number.parseInt(chunkSize, 10);
-    if (!resource || workers < 1 || workers > 32 || chunk < 1 || chunk > 1000 || !rangeValid()) return;
+    if (!resource || workers < 1 || workers > 32 || chunk < 1 || chunk > 1000 || !rangeValid() || !extendValid) return;
 
     setLaunching(true);
     setError(null);
@@ -74,15 +82,31 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
         playlist_range_start: isSingleTrack ? undefined : numericValue(rangeStart),
         playlist_range_end: isSingleTrack ? undefined : numericValue(rangeEnd),
         enhanced_retries: enhancedRetries,
+        extend_count: extend ? extendValue : undefined,
         username_prefix: "worker",
         port_base: 41000,
         run_id_prefix: "web-trigger",
       });
       setRawInput("");
+      setPreview(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to launch download");
     } finally {
       setLaunching(false);
+    }
+  };
+
+  const previewExtension = async () => {
+    if (!resource || !extendValid) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      setPreview(await api.previewExtension(resource.id, resource.kind, extendValue));
+    } catch (err) {
+      setPreview(null);
+      setError(err instanceof Error ? err.message : "Failed to preview the extension");
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -96,7 +120,8 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               Resume last run
             </p>
             <p className="mt-0.5 truncate font-mono text-xs text-muted-foreground" title={lastRun.playlistId}>
-              {resourceKindLabel(lastRun.resourceKind ?? "playlist")} {lastRun.playlistId} · {lastRun.workerCount} worker
+              {resourceKindLabel(lastRun.resourceKind ?? "playlist")} {lastRun.playlistId}
+              {lastRun.extendCount ? ` + ${lastRun.extendCount} extended` : ""} · {lastRun.workerCount} worker
               {lastRun.workerCount === 1 ? "" : "s"} · chunk {lastRun.chunkSize}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">Already-downloaded tracks are skipped, so this safely continues where it stopped.</p>
@@ -130,7 +155,10 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
               autoComplete="off"
               spellCheck={false}
               value={rawInput}
-              onChange={(event) => setRawInput(event.target.value)}
+              onChange={(event) => {
+                setRawInput(event.target.value);
+                setPreview(null);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && idValid && !launching) void launch();
               }}
@@ -192,6 +220,83 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
             </span>
           </label>
 
+          <div
+            className={cn(
+              "rounded-lg border p-3 transition-colors",
+              extend ? "border-primary/50 bg-primary/5" : "border-border hover:bg-muted/40",
+            )}
+          >
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={extend}
+                onChange={(e) => {
+                  setExtend(e.target.checked);
+                  setPreview(null);
+                }}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-border text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  <InfinityIcon className="h-3.5 w-3.5 text-primary" aria-hidden />
+                  Extend with Infinite Playlist
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  The next-track model continues the mood with songs from your library, avoiding repeat artists. They are
+                  downloaded together with the original tracks into an “(extended)” folder.
+                </span>
+              </span>
+            </label>
+            {extend ? (
+              <div className="mt-3 space-y-3 pl-7">
+                <div className="flex items-end gap-2">
+                  <label className="space-y-1.5 text-xs text-muted-foreground">
+                    Tracks to add
+                    <Input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={extendCount}
+                      onChange={(e) => {
+                        setExtendCount(e.target.value);
+                        setPreview(null);
+                      }}
+                      className="w-28"
+                    />
+                  </label>
+                  <Button
+                    variant="outline"
+                    disabled={!idValid || !extendValid || previewing}
+                    onClick={() => void previewExtension()}
+                  >
+                    {previewing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Sparkles className="h-4 w-4" aria-hidden />}
+                    Preview
+                  </Button>
+                </div>
+                {!extendValid ? <p className="text-xs text-destructive">Add between 1 and 500 tracks.</p> : null}
+                {preview ? (
+                  <div className="rounded-lg border border-border bg-card">
+                    <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                      {preview.seedsMatched} of {preview.seedCount} tracks from “{preview.name}” are in the model's library
+                      {preview.coreSize < preview.seedsMatched ? ` · following its ${preview.coreSize}-track core mood` : ""}
+                    </p>
+                    <ol className="max-h-64 divide-y divide-border overflow-y-auto scrollbar-thin">
+                      {preview.tracks.map((track, index) => (
+                        <li key={track.id} className="flex items-baseline gap-3 px-3 py-1.5 text-xs">
+                          <span className="tabular w-6 shrink-0 text-right text-muted-foreground">{index + 1}</span>
+                          <span className="min-w-0 truncate">
+                            <span className="text-foreground">{track.name}</span>
+                            <span className="text-muted-foreground"> — {track.artist}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
           {!rangeValid() ? (
             <p className="text-xs text-destructive">Range start must be less than range end.</p>
           ) : null}
@@ -199,9 +304,9 @@ export function PlaylistsView({ onLaunch, lastRun }: PlaylistsViewProps) {
             <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</p>
           ) : null}
 
-          <Button className="w-full" disabled={!idValid || launching || !rangeValid()} onClick={() => void launch()}>
+          <Button className="w-full" disabled={!idValid || launching || !rangeValid() || !extendValid} onClick={() => void launch()}>
             {launching ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Play className="h-4 w-4" aria-hidden />}
-            {launching ? "Starting…" : "Start sync"}
+            {launching ? "Starting…" : extend ? "Extend & sync" : "Start sync"}
           </Button>
         </div>
       </div>
