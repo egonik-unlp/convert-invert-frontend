@@ -288,6 +288,19 @@ export const api = {
     return handleResponse(res, "Could not resolve that Spotify link");
   },
 
+  /** Direct link that downloads one finished file (a plain navigation can't send headers, so
+   * the key rides in the query string — the server accepts that only on download routes). */
+  fileDownloadUrl(name: string, folder?: string | null): string {
+    const params = new URLSearchParams({ name, ...(folder ? { folder } : {}), ...(API_KEY ? { key: API_KEY } : {}) });
+    return `${API_BASE}/downloads/file?${params.toString()}`;
+  },
+
+  /** Direct link that streams a whole playlist folder as a .zip. */
+  folderZipUrl(folder: string): string {
+    const params = new URLSearchParams({ folder, ...(API_KEY ? { key: API_KEY } : {}) });
+    return `${API_BASE}/downloads/zip?${params.toString()}`;
+  },
+
   async previewExtension(
     id: string,
     kind: "playlist" | "album" | "track",

@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
-import { ArrowUpDown, Check, Copy, Disc3, FileAudio, HardDrive, ListMusic, Music, RotateCw, Search } from "lucide-react";
+import { ArrowUpDown, Check, Copy, Disc3, Download, FileArchive, FileAudio, HardDrive, ListMusic, Music, RotateCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/EmptyState";
 import { StatCard } from "@/components/StatCard";
+import { api } from "@/lib/api-client";
 import { TONE_SOFT } from "@/lib/status";
 import { cn } from "@/lib/utils";
 import type { DownloadedFile } from "@/types";
@@ -44,6 +45,7 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
   const [sortBy, setSortBy] = useState<SortKey>("date");
   const [desc, setDesc] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
+  const [zipFolder, setZipFolder] = useState("");
 
   const stats = useMemo(() => {
     const totalSize = downloads.reduce((sum, f) => sum + f.size, 0);
@@ -51,6 +53,18 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
     const mp3 = downloads.filter((f) => ext(f.name) === "mp3").length;
     const playlists = new Set(downloads.map((f) => f.folder).filter(Boolean)).size;
     return { count: downloads.length, size: humanSize(totalSize), flac, mp3, playlists };
+  }, [downloads]);
+
+  const folders = useMemo(() => {
+    const sizes = new Map<string, { count: number; size: number }>();
+    for (const f of downloads) {
+      if (!f.folder) continue;
+      const entry = sizes.get(f.folder) ?? { count: 0, size: 0 };
+      entry.count += 1;
+      entry.size += f.size;
+      sizes.set(f.folder, entry);
+    }
+    return [...sizes.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   }, [downloads]);
 
   const rows = useMemo(() => {
@@ -104,6 +118,41 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
         <StatCard label="Lossless" value={loading ? "—" : stats.flac} Icon={Disc3} tone="info" hint="FLAC" />
         <StatCard label="Compressed" value={loading ? "—" : stats.mp3} Icon={FileAudio} tone="success" hint="MP3" />
       </div>
+
+      {folders.length > 0 ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center">
+          <p className="flex shrink-0 items-center gap-2 text-sm font-medium text-foreground">
+            <FileArchive className="h-4 w-4 text-primary" aria-hidden />
+            Download a playlist
+          </p>
+          <select
+            value={zipFolder}
+            onChange={(e) => setZipFolder(e.target.value)}
+            aria-label="Playlist folder to download"
+            className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="">Choose a playlist folder…</option>
+            {folders.map(([name, info]) => (
+              <option key={name} value={name}>
+                {name} — {info.count} file{info.count === 1 ? "" : "s"}, {humanSize(info.size)}
+              </option>
+            ))}
+          </select>
+          {zipFolder ? (
+            <Button asChild className="shrink-0">
+              <a href={api.folderZipUrl(zipFolder)} download>
+                <Download className="h-4 w-4" aria-hidden />
+                Download .zip
+              </a>
+            </Button>
+          ) : (
+            <Button disabled className="shrink-0">
+              <Download className="h-4 w-4" aria-hidden />
+              Download .zip
+            </Button>
+          )}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -167,7 +216,7 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
             <button type="button" onClick={() => toggleSort("date")} className="flex w-44 items-center gap-1 hover:text-foreground">
               Modified <ArrowUpDown className="h-3 w-3" aria-hidden />
             </button>
-            <span className="w-8" />
+            <span className="w-[4.5rem]" />
           </div>
           <ul className="max-h-[calc(100vh-22rem)] divide-y divide-border overflow-y-auto scrollbar-thin">
             {rows.map((file) => (
@@ -201,6 +250,16 @@ export function DownloadsBrowser({ downloads, loading, onRefresh }: DownloadsBro
                 <span className="hidden w-44 shrink-0 text-xs text-muted-foreground md:block">
                   {file.modified > 0 ? new Date(file.modified * 1000).toLocaleString() : "Unknown"}
                 </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  asChild
+                  className="h-8 w-8 shrink-0 text-muted-foreground opacity-60 transition-opacity hover:text-foreground group-hover:opacity-100"
+                >
+                  <a href={api.fileDownloadUrl(file.name, file.folder)} download aria-label={`Download ${file.name}`} title="Download to this computer">
+                    <Download className="h-4 w-4" aria-hidden />
+                  </a>
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
