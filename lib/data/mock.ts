@@ -22,6 +22,9 @@ import type {
   SearchResults,
   TrackStatus,
   UserAccount,
+  DownloadedCollection,
+  DownloadedSong,
+  DownloadedSort,
 } from "@/lib/api-client";
 import { fallbackJudge, fallbackTuning } from "@/lib/api-client";
 import type { DownloadedFile, Judgement, JudgementFeedItem, JudgementsPage, LogEntry, StartRequest, WorkerInfo } from "@/types";
@@ -270,6 +273,32 @@ function enqueue(ids: string[], requester: Requester): number {
     queued += 1;
   }
   return queued;
+}
+
+/** Everything owned right now, as the "Descargadas" view lists it. */
+function downloadedSongs(): DownloadedSong[] {
+  const seen = new Map<string, DownloadedSong>();
+  for (const collection of COLLECTIONS) {
+    for (const song of collection.songs) {
+      const id = songId(song);
+      if (seen.has(id) || statusOf(id).state !== "owned") continue;
+      const s = summary(id);
+      const requester = collection.item.owner === "Radiohead" ? "Gonik" : collection.item.owner;
+      seen.set(id, {
+        ...toTrack(song),
+        size: s?.size ?? 8_000_000 + (hash(song[0]) % 30_000_000),
+        addedAt: Math.round(now() - (hash(song[0]) % 2_592_000)),
+        format: s?.format ?? "flac",
+        available: true,
+        requestedBy: { id: hash(requester) % 100, name: requester, avatarUrl: null },
+      });
+    }
+  }
+  return [...seen.values()];
+}
+
+function downloadedName(collection: MockCollection): string {
+  return collection.item.kind === "liked" ? "Liked Songs - Gonik" : collection.item.name;
 }
 
 // Something is moving when the mock opens.
@@ -575,6 +604,51 @@ export const mock: DataSource = {
   },
   fileDownloadUrl: () => "#",
   folderZipUrl: () => "#",
+  trackFileUrl: () => "#",
+  async getDownloadedSongs(opts: { q?: string; sort?: DownloadedSort; collection?: string; cursor?: number; limit?: number } = {}) {
+    await sleep(200);
+    const all = downloadedSongs();
+    let songs = all;
+    let collection = null;
+    if (opts.collection) {
+      const found = COLLECTIONS.find((c) => c.item.id === opts.collection);
+      const ids = new Set((found?.songs ?? []).map(songId));
+      songs = songs.filter((song) => ids.has(song.spotifyId));
+      if (found) collection = { id: found.item.id, name: downloadedName(found), folder: downloadedName(found), folderExists: true };
+    }
+    const q = opts.q?.trim().toLowerCase();
+    if (q) songs = songs.filter((song) => q.split(/\s+/).every((word) => `${song.title} ${song.artist} ${song.album}`.toLowerCase().includes(word)));
+    const by = (key: (song: DownloadedSong) => string) => (a: DownloadedSong, b: DownloadedSong) => key(a).localeCompare(key(b));
+    const sort = opts.sort ?? "recent";
+    songs = [...songs].sort(
+      sort === "artist" ? by((s) => s.artist + s.album) : sort === "album" ? by((s) => s.album + s.artist) : sort === "title" ? by((s) => s.title) : (a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0),
+    );
+    const start = opts.cursor ?? 0;
+    const end = Math.min(songs.length, start + (opts.limit ?? 100));
+    return {
+      songs: songs.slice(start, end),
+      total: songs.length,
+      totalAll: all.length,
+      totalBytes: all.reduce((sum, song) => sum + (song.size ?? 0), 0),
+      nextCursor: end < songs.length ? end : null,
+      collection,
+    };
+  },
+  async getDownloadedCollections(): Promise<DownloadedCollection[]> {
+    await sleep(200);
+    const owned = new Map(downloadedSongs().map((song) => [song.spotifyId, song]));
+    return COLLECTIONS.map((c) => {
+      const songs = c.songs.map(songId).filter((id) => owned.has(id));
+      const covers = [...new Set(songs.map((id) => owned.get(id)?.imageUrl).filter((url): url is string => !!url))].slice(0, 4);
+      const updatedAt = Math.max(0, ...songs.map((id) => owned.get(id)?.addedAt ?? 0));
+      return { id: c.item.id, name: downloadedName(c), songs: songs.length, covers, updatedAt, folder: downloadedName(c) };
+    }).filter((c) => c.songs > 0);
+  },
+  async fillDownloadedFolder(id: string) {
+    await sleep(200);
+    const found = COLLECTIONS.find((c) => c.item.id === id);
+    return { folder: found ? downloadedName(found) : id, folderExists: true, linked: 0 };
+  },
   async fillFolder(kind: CollectionKind, id: string) {
     await sleep(200);
     const collection = findCollection(kind, id);

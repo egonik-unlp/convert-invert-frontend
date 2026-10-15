@@ -75,7 +75,13 @@ export function SearchView({ q }: { q: string }) {
                       </button>
                       <span className="hidden truncate text-xs text-muted-foreground sm:block">{track.album}</span>
                       <span className="tabular hidden text-right text-xs text-muted-foreground sm:block">{format.trackDuration(track.durationMs)}</span>
-                      <StatusCell status={track} onOpen={open} onDownload={() => void download({ kind: "track", id: track.spotifyId })} />
+                      <StatusCell
+                        status={track}
+                        onOpen={open}
+                        onDownload={() => void download({ kind: "track", id: track.spotifyId })}
+                        fileUrl={track.state === "owned" ? data.trackFileUrl(track.spotifyId) : undefined}
+                        fileLabel={t.status.downloadFileOf(track.title)}
+                      />
                     </li>
                   );
                 })}

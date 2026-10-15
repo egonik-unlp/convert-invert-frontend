@@ -5,6 +5,7 @@ import type { CollectionTrack } from "@/lib/api-client";
 import { useFormat, useT } from "@/lib/i18n";
 import { Cover } from "@/components/Cover";
 import { useApp } from "@/components/shell/AppContext";
+import { data } from "@/lib/data";
 import { StatusCell, statusText } from "./StatusCell";
 import { cn } from "@/lib/utils";
 
@@ -132,6 +133,7 @@ export function TrackList({ tracks, positions, selected, onToggle, onOpen, onDow
               selected={selected.has(track.spotifyId)}
               selecting={selected.size > 0}
               statusLabel={statusText(t, track)}
+              fileLabel={t.status.downloadFileOf(track.title)}
               selectLabel={t.collection.selectRow(track.title)}
               onFocus={setFocusIndex}
               onToggle={onToggle}
@@ -154,6 +156,7 @@ interface RowProps {
   selected: boolean;
   selecting: boolean;
   statusLabel: string;
+  fileLabel: string;
   selectLabel: string;
   onFocus: (index: number) => void;
   onToggle: (spotifyId: string) => void;
@@ -170,6 +173,7 @@ const Row = memo(function Row({
   selected,
   selecting,
   statusLabel,
+  fileLabel,
   selectLabel,
   onFocus,
   onToggle,
@@ -221,7 +225,13 @@ const Row = memo(function Row({
         {format.trackDuration(track.durationMs)}
       </span>
       <span role="gridcell" className="flex min-w-0 justify-end sm:justify-start">
-        <StatusCell status={track} onDownload={() => onDownload(track)} onOpen={() => onOpen(track)} />
+        <StatusCell
+          status={track}
+          onDownload={() => onDownload(track)}
+          onOpen={() => onOpen(track)}
+          fileUrl={track.state === "owned" ? data.trackFileUrl(track.spotifyId) : undefined}
+          fileLabel={fileLabel}
+        />
       </span>
     </div>
   );

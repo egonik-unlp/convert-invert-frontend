@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, Check, ChevronRight, Copy, RotateCw, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowDownToLine, Check, ChevronRight, Copy, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import type { JudgingCandidate, JudgingDetail } from "@/lib/api-client";
 import { data } from "@/lib/data";
@@ -98,6 +98,14 @@ function PanelBody({ spotifyId, info }: { spotifyId: string; info?: TrackInfo })
                 </>
               ) : null}
             </p>
+          ) : null}
+          {detail?.status.state === "owned" ? (
+            <Button variant="outline" size="sm" asChild className="mt-2">
+              <a href={data.trackFileUrl(spotifyId)} download>
+                <ArrowDownToLine aria-hidden />
+                {t.status.downloadFile}
+              </a>
+            </Button>
           ) : null}
         </div>
       </header>

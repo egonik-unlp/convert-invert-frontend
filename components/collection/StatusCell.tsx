@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, ArrowDown, Check, Clock, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowDownToLine, Check, Clock, X } from "lucide-react";
 import type { TrackStatus } from "@/lib/api-client";
 import { useT, type Dict } from "@/lib/i18n";
 import { scorePct, verdictLabel } from "@/lib/judgement";
@@ -39,11 +39,16 @@ export const StatusCell = memo(function StatusCell({
   status,
   onDownload,
   onOpen,
+  fileUrl,
+  fileLabel,
   className,
 }: {
   status: TrackStatus;
   onDownload: () => void;
   onOpen: () => void;
+  /** For a downloaded song: link to its file, shown as an icon on row hover (always on touch). */
+  fileUrl?: string;
+  fileLabel?: string;
   className?: string;
 }) {
   const t = useT();
@@ -56,12 +61,12 @@ export const StatusCell = memo(function StatusCell({
   switch (status.state) {
     case "owned": {
       const judging = status.judging;
-      return (
+      const verdict = (
         <button
           type="button"
           tabIndex={-1}
           onClick={(e) => stop(e, onOpen)}
-          className={cn(base, "text-muted-foreground hover:bg-hover hover:text-foreground", className)}
+          className={cn(base, "min-w-0 text-muted-foreground hover:bg-hover hover:text-foreground", !fileUrl && className)}
           title={judging?.uncertain ? t.status.uncertain : t.status.owned}
         >
           {judging?.uncertain ? <AlertTriangle className="text-accent" aria-hidden /> : <Check className="text-ok" aria-hidden />}
@@ -70,6 +75,23 @@ export const StatusCell = memo(function StatusCell({
             {judging?.score != null ? <span className="tabular text-muted-foreground"> · {scorePct(judging.score)}</span> : null}
           </span>
         </button>
+      );
+      if (!fileUrl) return verdict;
+      return (
+        <span className={cn("flex min-w-0 max-w-full items-center", className)}>
+          {verdict}
+          <a
+            href={fileUrl}
+            download
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            aria-label={fileLabel ?? t.status.downloadFile}
+            title={fileLabel ?? t.status.downloadFile}
+            className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-hover hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100 [&_svg]:h-3.5 [&_svg]:w-3.5"
+          >
+            <ArrowDownToLine aria-hidden />
+          </a>
+        </span>
       );
     }
     case "missing":

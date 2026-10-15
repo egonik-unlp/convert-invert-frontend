@@ -7,6 +7,7 @@ import { data } from "@/lib/data";
 import { usePolling } from "@/lib/data/hooks";
 import { useFormat, useT } from "@/lib/i18n";
 import { SYSTEM_TABS, type SystemTab } from "@/lib/routes";
+import { FilesView } from "@/components/FilesView";
 import { parseSpotifyResource } from "@/lib/spotify";
 import { useAppConfig } from "@/hooks/useAppConfig";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,7 +48,17 @@ export function SystemView({ tab }: { tab: SystemTab }) {
         ))}
       </div>
       <div role="tabpanel" className="pt-4">
-        {tab === "people" ? <People /> : tab === "workers" ? <Workers /> : tab === "judge" ? <JudgeSwitch /> : <Logs />}
+        {tab === "people" ? (
+          <People />
+        ) : tab === "workers" ? (
+          <Workers />
+        ) : tab === "judge" ? (
+          <JudgeSwitch />
+        ) : tab === "files" ? (
+          <FilesView />
+        ) : (
+          <Logs />
+        )}
       </div>
     </div>
   );

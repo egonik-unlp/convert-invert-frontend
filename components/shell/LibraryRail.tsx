@@ -1,5 +1,5 @@
 import { forwardRef, useState } from "react";
-import { Check, FolderOpen, Gavel, Plus, Search, Settings2 } from "lucide-react";
+import { Check, HardDriveDownload, Gavel, Plus, Search, Settings2 } from "lucide-react";
 import type { LibraryItem } from "@/lib/api-client";
 import { itemKey, type LibraryState } from "@/lib/data/hooks";
 import { useT } from "@/lib/i18n";
@@ -33,6 +33,8 @@ export const LibraryRail = forwardRef<HTMLInputElement, LibraryRailProps>(functi
   const activeKey = route.name === "collection" ? `${route.kind}:${route.id}` : null;
   const items = library.items.filter((item) => filter === "all" || item.kind === filter || (filter === "playlist" && item.kind === "liked"));
 
+  const isActive = (name: Route["name"]) =>
+    route.name === name || (name === "downloaded" && route.name === "downloadedCollection");
   const navLink = (path: string, name: Route["name"], label: string, Icon: typeof Gavel, tag?: string) => (
     <a
       href={`#${path}`}
@@ -40,10 +42,10 @@ export const LibraryRail = forwardRef<HTMLInputElement, LibraryRailProps>(functi
         event.preventDefault();
         onNavigate(path);
       }}
-      aria-current={route.name === name ? "page" : undefined}
+      aria-current={isActive(name) ? "page" : undefined}
       className={cn(
         "flex items-center gap-2.5 rounded-md px-1 py-1.5 text-muted-foreground hover:text-foreground [&>svg]:h-[15px] [&>svg]:w-[15px]",
-        route.name === name && "bg-raised text-foreground",
+        isActive(name) && "bg-raised text-foreground",
       )}
     >
       <Icon aria-hidden />
@@ -145,7 +147,7 @@ export const LibraryRail = forwardRef<HTMLInputElement, LibraryRailProps>(functi
 
       <div className="flex flex-col gap-px border-t border-line pt-2">
         {navLink("/verdicts", "verdicts", t.nav.verdicts, Gavel)}
-        {navLink("/files", "files", t.nav.files, FolderOpen)}
+        {navLink("/downloaded", "downloaded", t.nav.downloaded, HardDriveDownload)}
         {isAdmin ? navLink("/system/people", "system", t.nav.system, Settings2, t.nav.adminTag) : null}
       </div>
     </nav>

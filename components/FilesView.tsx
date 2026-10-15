@@ -14,7 +14,10 @@ interface Folder {
   size: number;
 }
 
-/** Downloaded files on disk, grouped by folder, with a name filter and a .zip per folder. */
+/**
+ * Downloaded files on disk, grouped by folder, with a name filter and a .zip per folder. The raw
+ * view for admins (Sistema → Archivos); everyone else browses "Descargadas".
+ */
 export function FilesView() {
   const t = useT();
   const format = useFormat();
@@ -51,12 +54,9 @@ export function FilesView() {
   const totalSize = (files ?? []).reduce((sum, f) => sum + f.size, 0);
 
   return (
-    <div className="px-4 pb-16 pt-6 md:px-7">
+    <div>
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-[-0.01em]">{t.files.title}</h1>
-          {files ? <p className="mt-1 text-xs text-muted-foreground">{t.files.summary(files.length, format.size(totalSize))}</p> : null}
-        </div>
+        <p className="text-xs text-muted-foreground">{files ? t.files.summary(files.length, format.size(totalSize)) : null}</p>
         <label className="relative block w-full max-w-[16rem]">
           <span className="sr-only">{t.files.filter}</span>
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden />

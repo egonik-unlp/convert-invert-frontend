@@ -261,6 +261,44 @@ export type CollectionKind = "playlist" | "album" | "liked" | "track";
 /** owned | downloading | comparing | searching | queued | failed | missing */
 export type TrackState = "owned" | "downloading" | "comparing" | "searching" | "queued" | "failed" | "missing";
 
+/** A song that is on disk, for the "Descargadas" view. */
+export interface DownloadedSong {
+  spotifyId: string;
+  title: string;
+  artist: string;
+  album: string;
+  imageUrl?: string;
+  durationMs?: number;
+  size?: number;
+  /** Unix seconds. */
+  addedAt?: number;
+  format?: string;
+  /** False when the database says downloaded but the file is missing. */
+  available: boolean;
+  requestedBy?: Requester;
+}
+
+export type DownloadedSort = "recent" | "artist" | "album" | "title";
+
+export interface DownloadedPage {
+  songs: DownloadedSong[];
+  total: number;
+  totalAll: number;
+  totalBytes: number;
+  nextCursor: number | null;
+  collection: { id: string; name: string; folder: string | null; folderExists: boolean } | null;
+}
+
+/** Songs downloaded under one playlist/album (or "untagged"), as a card. */
+export interface DownloadedCollection {
+  id: string;
+  name: string;
+  songs: number;
+  covers: string[];
+  updatedAt?: number;
+  folder?: string;
+}
+
 export interface Requester {
   id: number;
   name: string;
@@ -595,6 +633,40 @@ export const api = {
   async fillFolder(kind: CollectionKind, id: string): Promise<{ folder: string; folderExists: boolean; linked: number }> {
     const res = await fetchWithTimeout(`${API_BASE}/collections/${kind}/${encodeURIComponent(id)}/folder`, { method: "POST" }, 60000);
     return handleResponse(res, "Could not prepare the folder");
+  },
+
+  async getDownloadedSongs(opts: {
+    q?: string;
+    sort?: DownloadedSort;
+    collection?: string;
+    cursor?: number;
+    limit?: number;
+  } = {}): Promise<DownloadedPage> {
+    const params = new URLSearchParams();
+    if (opts.q) params.set("q", opts.q);
+    if (opts.sort) params.set("sort", opts.sort);
+    if (opts.collection) params.set("collection", opts.collection);
+    if (opts.cursor) params.set("cursor", String(opts.cursor));
+    if (opts.limit) params.set("limit", String(opts.limit));
+    const res = await fetchWithTimeout(`${API_BASE}/downloaded/songs?${params}`, {}, 30000);
+    return handleResponse(res, "Could not load downloaded songs");
+  },
+
+  async getDownloadedCollections(): Promise<DownloadedCollection[]> {
+    const res = await fetchWithTimeout(`${API_BASE}/downloaded/collections`, {}, 30000);
+    const body: { collections: DownloadedCollection[] } = await handleResponse(res, "Could not load downloaded collections");
+    return body.collections;
+  },
+
+  /** Link a downloaded collection's songs filed elsewhere into its folder, before its .zip. */
+  async fillDownloadedFolder(id: string): Promise<{ folder: string; folderExists: boolean; linked: number }> {
+    const res = await fetchWithTimeout(`${API_BASE}/downloaded/collections/${encodeURIComponent(id)}/folder`, { method: "POST" }, 60000);
+    return handleResponse(res, "Could not prepare the folder");
+  },
+
+  /** Direct link to one downloaded song's file, wherever it was filed. */
+  trackFileUrl(spotifyId: string): string {
+    return `${API_BASE}/tracks/by-spotify/${encodeURIComponent(spotifyId)}/file`;
   },
 
   /** Direct link that streams a whole playlist folder as a .zip. */

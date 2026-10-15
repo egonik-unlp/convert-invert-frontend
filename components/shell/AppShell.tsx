@@ -13,7 +13,7 @@ import { JudgingPanel } from "@/components/JudgingPanel";
 import { CollectionView } from "@/components/collection/CollectionView";
 import { SearchView } from "@/components/SearchView";
 import { VerdictsView } from "@/components/VerdictsView";
-import { FilesView } from "@/components/FilesView";
+import { DownloadedCollectionView, DownloadedView } from "@/components/DownloadedView";
 import { SystemView } from "@/components/SystemView";
 import { AppContext, type AppActions, type TrackInfo } from "./AppContext";
 import { LibraryRail } from "./LibraryRail";
@@ -169,8 +169,10 @@ export function AppShell() {
               <SearchView q={route.q} />
             ) : route.name === "verdicts" ? (
               <VerdictsView />
-            ) : route.name === "files" ? (
-              <FilesView />
+            ) : route.name === "downloaded" ? (
+              <DownloadedView tab={route.tab} />
+            ) : route.name === "downloadedCollection" ? (
+              <DownloadedCollectionView key={route.id} id={route.id} />
             ) : route.name === "system" && isAdmin ? (
               <SystemView tab={route.tab} />
             ) : null}
