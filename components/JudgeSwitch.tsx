@@ -1,104 +1,89 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { data } from "@/lib/data";
+import { useT } from "@/lib/i18n";
+import { formatJudgeName } from "@/lib/judgement";
+import { useAppConfig } from "@/hooks/useAppConfig";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAppConfig } from "@/hooks/useAppConfig";
-import { api } from "@/lib/api-client";
-import { formatJudgeName } from "@/lib/judgement";
+import { Spinner } from "@/components/Spinner";
 import { cn } from "@/lib/utils";
 
-const BACKENDS = [
-  { id: "levenshtein", label: "Levenshtein", hint: "String similarity. Instant, no model, but no reason given." },
-  { id: "smol", label: "Smol judge", hint: "The fine-tuned model. Labels each verdict; needs a reachable ollama." },
-];
-
 /**
- * Switches the judge without redeploying.
- *
- * Which judge is right depends on what the machine is doing: the model runs far
- * slower on a box busy with something else than on an idle one, so the useful
- * control is not just "model or not" but "model, over there". Both are here.
+ * Switches the judge without redeploying (admin only). The model runs far slower on a busy box,
+ * so the control is "model, over there" as well as "model or not".
  */
-export function JudgeSwitch() {
-  const { judge, refresh } = useAppConfig();
+export function JudgeSwitch({ compact = false }: { compact?: boolean }) {
+  const t = useT();
+  const { judge, judgeThreshold, refresh } = useAppConfig();
   const [url, setUrl] = useState(judge.url ?? "");
   const [busy, setBusy] = useState(false);
 
-  // Follow the server whenever it reports a different URL (another tab, a reset).
   useEffect(() => {
     setUrl(judge.url ?? "");
   }, [judge.url]);
 
   const selected = judge.backend === "smol-judge" ? "smol" : "levenshtein";
   const urlDirty = selected === "smol" && url.trim() !== (judge.url ?? "");
+  const backends = [
+    { id: "levenshtein", label: t.system.judge.levenshtein, hint: t.system.judge.levenshteinHint },
+    { id: "smol", label: t.system.judge.smol, hint: t.system.judge.smolHint },
+  ];
 
-  const apply = async (label: string, call: () => Promise<{ backend: string }>) => {
+  const apply = async (call: () => Promise<{ backend: string }>) => {
     setBusy(true);
     try {
       const next = await call();
-      // The switch changes /api/config, which the whole dashboard reads.
       await refresh();
-      toast.success(`${label} ${formatJudgeName(next.backend)} — applies to the next run`);
+      toast(t.system.judge.switched(formatJudgeName(next.backend)));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to switch the judge");
+      toast.error(err instanceof Error ? err.message : t.common.somethingFailed);
     } finally {
       setBusy(false);
     }
   };
 
-  const switchTo = (backend: string, nextUrl?: string) =>
-    apply("Judge set to", () => api.setJudge(backend, nextUrl));
-
-  const reset = () => apply("Reverted to the configured judge:", () => api.resetJudge());
-
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+    <div className="space-y-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-muted-foreground">Judge</span>
-        <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-          {BACKENDS.map((backend) => (
+        <span className="text-muted-foreground">{t.system.judge.backend}</span>
+        <div className="inline-flex gap-0.5" role="radiogroup" aria-label={t.system.judge.backend}>
+          {backends.map((backend) => (
             <button
               key={backend.id}
               type="button"
+              role="radio"
+              aria-checked={selected === backend.id}
               disabled={busy}
               title={backend.hint}
-              aria-pressed={selected === backend.id}
-              onClick={() => switchTo(backend.id, backend.id === "smol" ? url.trim() || undefined : undefined)}
+              onClick={() => apply(() => data.setJudge(backend.id, backend.id === "smol" ? url.trim() || undefined : undefined))}
               className={cn(
-                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
-                selected === backend.id
-                  ? "bg-primary/12 text-primary"
-                  : "text-muted-foreground hover:text-foreground",
+                "rounded-sm px-2 py-1 text-muted-foreground hover:text-foreground disabled:opacity-50",
+                selected === backend.id && "bg-raised text-foreground",
               )}
             >
               {backend.label}
             </button>
           ))}
         </div>
-
+        {judge.model ? <code className="font-mono text-2xs text-muted-foreground">{judge.model}</code> : null}
         {judge.source === "override" ? (
           <>
-            <span
-              className="rounded-full bg-warning/15 px-2 py-0.5 text-[0.7rem] font-medium text-warning"
-              title={`Switched from the dashboard. The deployment itself configures ${formatJudgeName(judge.envBackend)}.`}
-            >
-              overridden
+            <span className="text-accent" title={formatJudgeName(judge.envBackend)}>
+              {t.system.judge.overridden}
             </span>
-            <Button variant="ghost" size="sm" onClick={reset} disabled={busy} className="h-7 gap-1 text-xs">
-              <RotateCcw className="h-3 w-3" aria-hidden />
-              Reset
+            <Button variant="link" size="sm" disabled={busy} onClick={() => apply(() => data.resetJudge())}>
+              {t.system.judge.reset}
             </Button>
           </>
         ) : null}
-
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" aria-hidden /> : null}
+        {busy ? <Spinner className="text-muted-foreground" /> : null}
       </div>
 
-      {selected === "smol" ? (
+      {selected === "smol" && !compact ? (
         <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="judge-url" className="text-xs text-muted-foreground">
-            Ollama
+          <label htmlFor="judge-url" className="text-muted-foreground">
+            {t.system.judge.ollama}
           </label>
           <Input
             id="judge-url"
@@ -106,24 +91,20 @@ export function JudgeSwitch() {
             onChange={(event) => setUrl(event.target.value)}
             placeholder="http://host.docker.internal:11434"
             spellCheck={false}
-            className="h-8 max-w-sm flex-1 font-mono text-xs"
+            className="h-7 max-w-xs flex-1 font-mono text-xs"
           />
-          <Button
-            size="sm"
-            variant={urlDirty ? "default" : "outline"}
-            disabled={busy || !urlDirty}
-            onClick={() => switchTo("smol", url.trim())}
-            className="h-8 gap-1 text-xs"
-          >
-            <Check className="h-3 w-3" aria-hidden />
-            Use this host
+          <Button size="sm" variant={urlDirty ? "default" : "outline"} disabled={busy || !urlDirty} onClick={() => apply(() => data.setJudge("smol", url.trim()))}>
+            {t.system.judge.useHost}
           </Button>
         </div>
       ) : null}
 
-      <p className="text-[0.7rem] text-muted-foreground">
-        Applies to the next run — a run already in flight keeps the judge it started with.
-      </p>
+      {!compact ? (
+        <>
+          <p className="text-muted-foreground">{t.system.judge.threshold(Math.round(judgeThreshold * 100))}</p>
+          <p className="text-muted-foreground">{t.system.judge.appliesNext}</p>
+        </>
+      ) : null}
     </div>
   );
 }

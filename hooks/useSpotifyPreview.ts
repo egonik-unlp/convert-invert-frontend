@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api, type ResolvedResource } from "@/lib/api-client";
+import type { ResolvedResource } from "@/lib/api-client";
+import { data } from "@/lib/data";
 import type { SpotifyResource } from "@/lib/spotify";
 
 export interface SpotifyPreviewState {
@@ -30,7 +31,7 @@ export function useSpotifyPreview(resource: SpotifyResource | null, delayMs = 40
     setState({ loading: true, data: null, error: null });
 
     const timer = window.setTimeout(() => {
-      api
+      data
         .resolveResource(id, kind, controller.signal)
         .then((data) => setState({ loading: false, data, error: null }))
         .catch((err) => {

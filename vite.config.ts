@@ -7,7 +7,8 @@ export default defineConfig({
         port: 3000,
         host: '0.0.0.0',
         proxy: {
-          '/api': 'http://localhost:3124',
+          // Override to point the dev server at another backend (e.g. a test instance).
+          '/api': process.env.API_PROXY_TARGET || 'http://localhost:3124',
         },
       },
       plugins: [react()],

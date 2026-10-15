@@ -42,6 +42,18 @@ export function parseSpotifyResource(input: string): SpotifyResource | null {
   return null;
 }
 
+/** A pasted link or URI (not a bare id): what opens "Agregar desde Spotify" from anywhere. */
+export function parseSpotifyLink(input: string): SpotifyResource | null {
+  const trimmed = input.trim();
+  if (!/^(spotify:|https?:\/\/(open|play)\.spotify\.com\/)/i.test(trimmed)) return null;
+  return parseSpotifyResource(trimmed);
+}
+
+/** Spotify web URL for a collection, for "Abrir en Spotify". */
+export function spotifyUrl(kind: SpotifyResourceKind | "liked", id: string): string {
+  return kind === "liked" ? "https://open.spotify.com/collection/tracks" : `https://open.spotify.com/${kind}/${id}`;
+}
+
 const KIND_LABELS: Record<SpotifyResourceKind, string> = {
   playlist: "Playlist",
   album: "Album",

@@ -1,78 +1,46 @@
-import { CheckCircle2, CircleSlash, Shuffle, UserX, type LucideIcon } from "lucide-react";
 import type { Judgement, JudgementLabel } from "@/types";
-import type { Tone } from "@/lib/status";
+import type { Dict } from "@/lib/i18n";
 
-export interface LabelMeta {
-  label: string;
-  /** What the verdict means, in the judge's own terms. Shown on hover and in the legend. */
-  detail: string;
-  tone: Tone;
-  Icon: LucideIcon;
-}
-
-/**
- * Single source of truth for how each verdict is named and coloured.
- *
- * The wording comes from the taxonomy the model was trained on, so what the UI
- * claims a label means is what the label actually means. Order matters: the
- * distribution bar and the filter row both read it top-down, best first.
- */
-export const LABEL_META: Record<JudgementLabel, LabelMeta> = {
-  exact: {
-    label: "Exact",
-    detail: "The requested recording. Only these are downloaded.",
-    tone: "success",
-    Icon: CheckCircle2,
-  },
-  wrong_version: {
-    label: "Wrong version",
-    detail: "Right song, wrong recording — a remix, live take, edit or instrumental.",
-    tone: "warning",
-    Icon: Shuffle,
-  },
-  wrong_artist: {
-    label: "Wrong artist",
-    detail: "The title matches but a different act is performing.",
-    tone: "danger",
-    Icon: UserX,
-  },
-  different: {
-    label: "Different track",
-    detail: "An unrelated song that merely shares words with the request.",
-    tone: "muted",
-    Icon: CircleSlash,
-  },
-};
-
+/** Best first. The judge was trained on exactly these four. */
 export const LABEL_ORDER: JudgementLabel[] = ["exact", "wrong_version", "wrong_artist", "different"];
 
-export function isJudgementLabel(value: string | undefined): value is JudgementLabel {
-  return value != null && value in LABEL_META;
+export function isJudgementLabel(value: string | null | undefined): value is JudgementLabel {
+  return value != null && (LABEL_ORDER as string[]).includes(value);
 }
 
-/** Falls back to a neutral pill for a label the UI has not been taught. */
-export function labelMeta(value: string | undefined): LabelMeta | null {
-  if (!value) return null;
-  if (isJudgementLabel(value)) return LABEL_META[value];
-  return { label: value, detail: "Unrecognised verdict.", tone: "muted", Icon: CircleSlash };
+/** Short verdict name in the active language ("Es esta", "Otra versión"…). */
+export function verdictLabel(t: Dict, label: string | null | undefined): string {
+  if (!label) return t.verdict.unlabelled;
+  return isJudgementLabel(label) ? t.verdict[label] : label;
 }
+
+export function verdictDetail(t: Dict, label: string | null | undefined): string | undefined {
+  return isJudgementLabel(label) ? t.verdict.detail[label] : undefined;
+}
+
+/** Colour class for a verdict: green only for exact, red for a different song, muted otherwise. */
+export function verdictTone(label: string | null | undefined): string {
+  switch (label) {
+    case "exact":
+      return "text-ok";
+    case "wrong_artist":
+    case "different":
+      return "text-bad";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+/** Score as 0–100. */
+export const scorePct = (score: number | null | undefined) => Math.round(Math.max(0, Math.min(1, score ?? 0)) * 100);
 
 /**
- * The verdict that decided this candidate.
- *
- * Several judges rule on every candidate but only one of them produces a label,
- * and the label is the interesting part — so a labelled verdict wins over an
- * unlabelled one regardless of the order they came back in.
+ * The verdict that decided this candidate: a manual pick wins, then a labelled verdict, then the
+ * first one. Only one judge produces a label, and the label is the interesting part.
  */
 export function decidingJudgement(judgements: Judgement[] | undefined): Judgement | null {
   if (!judgements?.length) return null;
-  return judgements.find((judgement) => judgement.label) ?? judgements[0];
-}
-
-/** `1.2s` past a second, `184ms` below it — a judge that got slow should look slow. */
-export function formatLatency(ms: number): string {
-  if (!Number.isFinite(ms) || ms <= 0) return "—";
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+  return judgements.find((j) => j.judge === "manual") ?? judgements.find((j) => j.label) ?? judgements[0];
 }
 
 export function formatJudgeName(judge: string): string {
@@ -83,18 +51,9 @@ export function formatJudgeName(judge: string): string {
       return "Levenshtein";
     case "relative_mi":
       return "Relative MI";
+    case "manual":
+      return "Manual";
     default:
       return judge;
   }
-}
-
-/** Coarse "how long ago", enough for a feed that refreshes every few seconds. */
-export function formatAge(createdAtSecs: number, nowMs: number = Date.now()): string {
-  const seconds = Math.max(0, Math.round(nowMs / 1000 - createdAtSecs));
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
 }

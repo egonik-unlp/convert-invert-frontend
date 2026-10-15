@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-/** Wrap a CSS var as an alpha-capable color so `bg-primary/10` etc. resolve correctly. */
+/** Wrap a CSS var as an alpha-capable color so `bg-accent/10` etc. resolve correctly. */
 const withAlpha = (name: string) => `hsl(var(--${name}) / <alpha-value>)`;
 
 export default {
@@ -15,104 +15,51 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: withAlpha("border"),
-        input: withAlpha("input"),
-        ring: withAlpha("ring"),
         background: withAlpha("background"),
         foreground: withAlpha("foreground"),
-        primary: {
-          DEFAULT: withAlpha("primary"),
-          foreground: withAlpha("primary-foreground"),
-        },
-        secondary: {
-          DEFAULT: withAlpha("secondary"),
-          foreground: withAlpha("secondary-foreground"),
-        },
-        destructive: {
-          DEFAULT: withAlpha("destructive"),
-          foreground: withAlpha("destructive-foreground"),
-        },
-        success: {
-          DEFAULT: withAlpha("success"),
-          foreground: withAlpha("success-foreground"),
-        },
-        warning: {
-          DEFAULT: withAlpha("warning"),
-          foreground: withAlpha("warning-foreground"),
-        },
-        info: {
-          DEFAULT: withAlpha("info"),
-          foreground: withAlpha("info-foreground"),
-        },
-        muted: {
-          DEFAULT: withAlpha("muted"),
-          foreground: withAlpha("muted-foreground"),
-        },
+        raised: withAlpha("raised"),
+        hover: withAlpha("hover"),
+        line: withAlpha("line"),
+        faint: withAlpha("faint"),
+        ok: withAlpha("ok"),
+        bad: withAlpha("bad"),
         accent: {
           DEFAULT: withAlpha("accent"),
           foreground: withAlpha("accent-foreground"),
         },
-        card: {
-          DEFAULT: withAlpha("card"),
-          foreground: withAlpha("card-foreground"),
-        },
-        popover: {
-          DEFAULT: withAlpha("popover"),
-          foreground: withAlpha("popover-foreground"),
-        },
-        sidebar: {
-          DEFAULT: withAlpha("sidebar"),
-          foreground: withAlpha("sidebar-foreground"),
+        muted: {
+          DEFAULT: withAlpha("raised"),
+          foreground: withAlpha("muted-foreground"),
         },
       },
       borderRadius: {
-        xl: "calc(var(--radius) + 4px)",
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 3px)",
-        sm: "calc(var(--radius) - 6px)",
+        lg: "8px",
+        md: "var(--radius)",
+        sm: "4px",
       },
       fontFamily: {
-        sans: ["Inter Variable", "Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono Variable", "JetBrains Mono", "ui-monospace", "monospace"],
+        sans: ["Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        mono: ["IBM Plex Mono", "ui-monospace", "Menlo", "Consolas", "monospace"],
       },
-      boxShadow: {
-        focus: "0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring))",
+      fontSize: {
+        "2xs": ["11px", "1.35"],
+        xs: ["12px", "1.4"],
+        sm: ["13px", "1.4"],
+        base: ["15px", "1.35"],
+        xl: ["24px", "1.15"],
       },
       keyframes: {
-        "fade-in": {
-          from: { opacity: "0" },
-          to: { opacity: "1" },
-        },
-        "overlay-in": {
-          from: { opacity: "0" },
-          to: { opacity: "1" },
-        },
-        "content-in": {
-          from: { opacity: "0", transform: "translate(-50%, -48%) scale(0.97)" },
-          to: { opacity: "1", transform: "translate(-50%, -50%) scale(1)" },
-        },
-        "pop-in": {
-          from: { opacity: "0", transform: "scale(0.96)" },
-          to: { opacity: "1", transform: "scale(1)" },
-        },
-        "slide-up-in": {
-          from: { opacity: "0", transform: "translateY(6px)" },
-          to: { opacity: "1", transform: "translateY(0)" },
-        },
-        shimmer: {
-          "100%": { transform: "translateX(100%)" },
-        },
-        indeterminate: {
-          "0%": { transform: "translateX(-100%)" },
-          "100%": { transform: "translateX(400%)" },
-        },
+        "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
+        "slide-in-right": { from: { transform: "translateX(16px)", opacity: "0" }, to: { transform: "none", opacity: "1" } },
+        "slide-in-left": { from: { transform: "translateX(-100%)" }, to: { transform: "none" } },
+        "pop-in": { from: { opacity: "0", transform: "translate(-50%, -48%) scale(0.98)" }, to: { opacity: "1", transform: "translate(-50%, -50%)" } },
+        indeterminate: { "0%": { transform: "translateX(-100%)" }, "100%": { transform: "translateX(300%)" } },
       },
       animation: {
-        "fade-in": "fade-in 160ms ease-out",
-        "overlay-in": "overlay-in 160ms ease-out",
-        "content-in": "content-in 180ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "pop-in": "pop-in 140ms cubic-bezier(0.16, 1, 0.3, 1)",
-        "slide-up-in": "slide-up-in 200ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "fade-in": "fade-in 140ms ease-out",
+        "slide-in-right": "slide-in-right 160ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "slide-in-left": "slide-in-left 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "pop-in": "pop-in 150ms cubic-bezier(0.16, 1, 0.3, 1)",
         indeterminate: "indeterminate 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite",
       },
     },

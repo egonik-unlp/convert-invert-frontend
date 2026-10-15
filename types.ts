@@ -38,6 +38,8 @@ export interface Judgement {
 export interface JudgementFeedItem extends Judgement {
   submissionId: number;
   trackDbId: number;
+  /** Spotify track id; opens the judging panel. */
+  spotifyId: string;
   title: string;
   artist: string;
   album: string;

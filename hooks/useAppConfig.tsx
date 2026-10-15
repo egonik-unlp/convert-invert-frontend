@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, AppConfig, fallbackJudge, fallbackTuning } from "@/lib/api-client";
+import { type AppConfig, fallbackJudge, fallbackTuning } from "@/lib/api-client";
+import { data } from "@/lib/data";
 
 const fallbackConfig: AppConfig = {
   judgeThreshold: 0.75,
   judge: fallbackJudge,
-  auth: { scheme: "api_key", header: "X-API-Key" },
+  auth: { scheme: "session", header: "Cookie" },
   tuning: fallbackTuning,
 };
 
@@ -26,7 +27,7 @@ export function AppConfigProvider({ children }: { children: React.ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      setConfig(await api.getConfig());
+      setConfig(await data.getConfig());
     } catch {
       // Keep the last good config; the dashboard stays usable offline.
     }
