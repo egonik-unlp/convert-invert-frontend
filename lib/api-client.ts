@@ -11,7 +11,9 @@ import {
   DownloadedFile,
 } from "@/types";
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+// Relative, so the app also works mounted under a prefix (the page itself is always at the
+// app root; routes live in the hash).
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "api";
 const DEFAULT_TIMEOUT_MS = 4000;
 const WORKER_START_TIMEOUT_MS = 120_000;
 const WORKER_START_CONFIRM_ATTEMPTS = 12;
