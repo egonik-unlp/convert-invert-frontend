@@ -275,6 +275,39 @@ function enqueue(ids: string[], requester: Requester): number {
   return queued;
 }
 
+const tones = new Map<string, string>();
+
+/** A few seconds of a soft tone (pitch from the id), so the player has something to play. */
+function toneUrl(seed: string): string {
+  const cached = tones.get(seed);
+  if (cached) return cached;
+  const rate = 8000;
+  const samples = rate * 8;
+  const buffer = new ArrayBuffer(44 + samples * 2);
+  const view = new DataView(buffer);
+  const text = (offset: number, value: string) => [...value].forEach((c, i) => view.setUint8(offset + i, c.charCodeAt(0)));
+  text(0, "RIFF");
+  view.setUint32(4, 36 + samples * 2, true);
+  text(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, "data");
+  view.setUint32(40, samples * 2, true);
+  const freq = 220 + (hash(seed) % 330);
+  for (let i = 0; i < samples; i++) {
+    const fade = Math.min(1, i / 800, (samples - i) / 800);
+    view.setInt16(44 + i * 2, Math.sin((2 * Math.PI * freq * i) / rate) * 6000 * fade, true);
+  }
+  const url = URL.createObjectURL(new Blob([buffer], { type: "audio/wav" }));
+  tones.set(seed, url);
+  return url;
+}
+
 /** Everything owned right now, as the "Descargadas" view lists it. */
 function downloadedSongs(): DownloadedSong[] {
   const seen = new Map<string, DownloadedSong>();
@@ -605,6 +638,7 @@ export const mock: DataSource = {
   fileDownloadUrl: () => "#",
   folderZipUrl: () => "#",
   trackFileUrl: () => "#",
+  trackStreamUrl: (spotifyId: string) => toneUrl(spotifyId),
   async getDownloadedSongs(opts: { q?: string; sort?: DownloadedSort; collection?: string; cursor?: number; limit?: number } = {}) {
     await sleep(200);
     const all = downloadedSongs();

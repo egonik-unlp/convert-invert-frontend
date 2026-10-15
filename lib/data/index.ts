@@ -26,6 +26,7 @@ export type DataSource = Pick<
   | "folderZipUrl"
   | "fillFolder"
   | "trackFileUrl"
+  | "trackStreamUrl"
   | "getDownloadedSongs"
   | "getDownloadedCollections"
   | "fillDownloadedFolder"

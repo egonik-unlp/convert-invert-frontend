@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { LoginScreen } from "@/components/LoginScreen";
 import { AppShell } from "@/components/shell/AppShell";
+import { PlayerProvider } from "@/lib/player";
 
 function AuthGate() {
   const t = useT();
@@ -35,7 +36,9 @@ function AuthGate() {
     case "authed":
       return (
         <AppConfigProvider>
-          <AppShell />
+          <PlayerProvider>
+            <AppShell />
+          </PlayerProvider>
         </AppConfigProvider>
       );
   }

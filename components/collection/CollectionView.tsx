@@ -6,6 +6,7 @@ import type { CollectionKind, CollectionTrack } from "@/lib/api-client";
 import { data } from "@/lib/data";
 import { rememberLastCollection } from "@/lib/data/added";
 import { useCollection } from "@/lib/data/hooks";
+import { usePlayer } from "@/lib/player";
 import { useFormat, useT } from "@/lib/i18n";
 import { collectionPath } from "@/lib/routes";
 import { useAuth } from "@/hooks/useAuth";
@@ -42,6 +43,7 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
   const format = useFormat();
   const { me } = useAuth();
   const { download, openTrack } = useApp();
+  const { playList } = usePlayer();
   const collection = useCollection(kind, id);
   const { meta, counts, tracks, folder } = collection;
   const [tab, setTab] = useState<Tab>("all");
@@ -94,6 +96,14 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
     return result;
   }, [tracks]);
   const visible = useMemo(() => tracks.filter((track) => inTab(tab, track)), [tracks, tab]);
+  // Playing a song queues the downloaded songs of what is on screen, from that one on.
+  const playFrom = useCallback(
+    (track: CollectionTrack) => {
+      const playable = visible.filter((candidate) => candidate.state === "owned");
+      playList(playable, Math.max(0, playable.findIndex((candidate) => candidate.spotifyId === track.spotifyId)));
+    },
+    [visible, playList],
+  );
   const positions = useMemo(() => new Map(tracks.map((track, index) => [track.spotifyId, index + 1])), [tracks]);
   // If a tab empties out (say the last failed song got downloaded), fall back to "Todas".
   useEffect(() => {
@@ -263,6 +273,7 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
               onToggle={toggle}
               onOpen={open}
               onDownload={downloadOne}
+              onPlay={playFrom}
               label={name}
             />
           )}

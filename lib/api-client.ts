@@ -669,6 +669,11 @@ export const api = {
     return `${API_BASE}/tracks/by-spotify/${encodeURIComponent(spotifyId)}/file`;
   },
 
+  /** The same file for the player: served inline, with range requests so it can seek. */
+  trackStreamUrl(spotifyId: string): string {
+    return `${API_BASE}/tracks/by-spotify/${encodeURIComponent(spotifyId)}/file?inline=1`;
+  },
+
   /** Direct link that streams a whole playlist folder as a .zip. */
   folderZipUrl(folder: string): string {
     const params = new URLSearchParams({ folder });

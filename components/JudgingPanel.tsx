@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ArrowDown, ArrowDownToLine, Check, ChevronRight, Copy, RotateCw, X } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowDownToLine, Check, Pause, Play, ChevronRight, Copy, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import type { JudgingCandidate, JudgingDetail } from "@/lib/api-client";
 import { data } from "@/lib/data";
 import { useJudging } from "@/lib/data/hooks";
+import { usePlayer } from "@/lib/player";
 import { useFormat, useT } from "@/lib/i18n";
 import { decidingJudgement, formatJudgeName, scorePct, verdictDetail, verdictLabel, verdictTone } from "@/lib/judgement";
 import { useAppConfig } from "@/hooks/useAppConfig";
@@ -79,6 +80,8 @@ function PanelBody({ spotifyId, info }: { spotifyId: string; info?: TrackInfo })
   };
 
   const requester = detail?.status.requestedBy;
+  const { playList, current: playingTrack, playing } = usePlayer();
+  const isCurrent = playingTrack?.spotifyId === spotifyId;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -100,12 +103,22 @@ function PanelBody({ spotifyId, info }: { spotifyId: string; info?: TrackInfo })
             </p>
           ) : null}
           {detail?.status.state === "owned" ? (
-            <Button variant="outline" size="sm" asChild className="mt-2">
-              <a href={data.trackFileUrl(spotifyId)} download>
-                <ArrowDownToLine aria-hidden />
-                {t.status.downloadFile}
-              </a>
-            </Button>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => playList([{ spotifyId, title: title || "", artist: artist || "", album, imageUrl: info?.imageUrl }], 0)}
+              >
+                {isCurrent && playing ? <Pause aria-hidden /> : <Play aria-hidden />}
+                {isCurrent && playing ? t.player.pause : t.player.play}
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <a href={data.trackFileUrl(spotifyId)} download>
+                  <ArrowDownToLine aria-hidden />
+                  {t.status.downloadFile}
+                </a>
+              </Button>
+            </div>
           ) : null}
         </div>
       </header>

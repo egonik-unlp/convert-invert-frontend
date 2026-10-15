@@ -11,14 +11,18 @@ import { Avatar } from "@/components/Avatar";
 import { Cover } from "@/components/Cover";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { PlayCover } from "@/components/PlayCover";
 import { Spinner } from "@/components/Spinner";
 import { useApp } from "@/components/shell/AppContext";
+import { usePlayer } from "@/lib/player";
 import { cn } from "@/lib/utils";
 
 const SORTS: DownloadedSort[] = ["recent", "artist", "album", "title"];
 const UNTAGGED = "untagged";
 /** Title, album, requested by · arrived, length. The download link sits outside, in its own column. */
 const ROW = "grid grid-cols-[28px_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[28px_minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.9fr)_44px]";
+/** The same columns without the cover, which sits outside the row button so it can be its own play button. */
+const ROW_TEXT = "grid grid-cols-[minmax(0,1fr)] items-center gap-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_minmax(0,0.9fr)_44px]";
 
 /**
  * "Descargadas": everything already on disk, for everyone, as songs (search, sort, download each)
@@ -250,7 +254,13 @@ function SongList({
 }) {
   const t = useT();
   const { scrollRef } = useApp();
+  const { playList } = usePlayer();
   const sentinel = useRef<HTMLDivElement>(null);
+  // The loaded, available songs of this list are the queue, starting at the one pressed.
+  const playFrom = (song: DownloadedSong) => {
+    const playable = songs.filter((candidate) => candidate.available);
+    playList(playable, Math.max(0, playable.findIndex((candidate) => candidate.spotifyId === song.spotifyId)));
+  };
 
   useEffect(() => {
     const target = sentinel.current;
@@ -277,7 +287,7 @@ function SongList({
       </div>
       <ul>
         {songs.map((song) => (
-          <SongRow key={song.spotifyId} song={song} />
+          <SongRow key={song.spotifyId} song={song} onPlay={() => playFrom(song)} />
         ))}
       </ul>
       <div ref={sentinel} className="flex h-10 items-center justify-center">
@@ -287,19 +297,33 @@ function SongList({
   );
 }
 
-function SongRow({ song }: { song: DownloadedSong }) {
+function SongRow({ song, onPlay }: { song: DownloadedSong; onPlay: () => void }) {
   const t = useT();
   const format = useFormat();
   const { openTrack } = useApp();
+  const player = usePlayer();
+  const isCurrent = player.current?.spotifyId === song.spotifyId;
+  const playState = isCurrent ? (player.playing ? "playing" : "paused") : "none";
   const open = () => openTrack(song.spotifyId, { title: song.title, artist: song.artist, album: song.album, imageUrl: song.imageUrl });
   const meta = [song.format?.toUpperCase(), song.size ? format.size(song.size) : null].filter(Boolean).join(" · ");
 
   return (
     <li className="group flex items-center gap-3 rounded-md px-2 hover:bg-hover">
-      <button type="button" onClick={open} className={cn(ROW, "h-11 min-w-0 flex-1 text-left outline-none focus-visible:underline")}>
-        <Cover src={song.imageUrl} name={song.album || song.title} className="h-7 w-7" />
+      {song.available ? (
+        <PlayCover
+          src={song.imageUrl}
+          name={song.album || song.title}
+          state={playState}
+          onPlay={onPlay}
+          label={playState === "playing" ? t.player.pauseSong(song.title) : t.player.playSong(song.title)}
+          className="h-7 w-7"
+        />
+      ) : (
+        <Cover src={song.imageUrl} name={song.album || song.title} className="h-7 w-7 opacity-60" />
+      )}
+      <button type="button" onClick={open} className={cn(ROW_TEXT, "h-11 min-w-0 flex-1 text-left outline-none focus-visible:underline")}>
         <span className={cn("flex min-w-0 flex-col", !song.available && "opacity-60")}>
-          <span className="truncate">{song.title}</span>
+          <span className={cn("truncate", isCurrent && "text-accent")}>{song.title}</span>
           <span className="truncate text-xs text-muted-foreground">{song.artist}</span>
         </span>
         <span className="hidden min-w-0 flex-col sm:flex">

@@ -17,6 +17,7 @@ import { DownloadedCollectionView, DownloadedView } from "@/components/Downloade
 import { SystemView } from "@/components/SystemView";
 import { AppContext, type AppActions, type TrackInfo } from "./AppContext";
 import { LibraryRail } from "./LibraryRail";
+import { PlayerBar } from "./PlayerBar";
 import { TransferBar } from "./TransferBar";
 
 const isTyping = (target: EventTarget | null) =>
@@ -145,7 +146,7 @@ export function AppShell() {
 
   return (
     <AppContext.Provider value={actions}>
-      <div className="grid h-full grid-rows-[minmax(0,1fr)_auto] md:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid h-full grid-rows-[minmax(0,1fr)_auto_auto] md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="hidden min-h-0 border-r border-line md:block">{rail(true)}</aside>
 
         <main ref={scrollRef} className="relative min-w-0 overflow-y-auto scrollbar-thin" tabIndex={-1}>
@@ -179,6 +180,7 @@ export function AppShell() {
           </div>
         </main>
 
+        <PlayerBar />
         <TransferBar queue={queue} />
       </div>
 
