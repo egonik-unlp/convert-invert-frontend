@@ -575,6 +575,11 @@ export const mock: DataSource = {
   },
   fileDownloadUrl: () => "#",
   folderZipUrl: () => "#",
+  async fillFolder(kind: CollectionKind, id: string) {
+    await sleep(200);
+    const collection = findCollection(kind, id);
+    return { folder: collection?.item.name ?? id, folderExists: true, linked: 0 };
+  },
   async listUsers() {
     return USERS;
   },

@@ -498,7 +498,7 @@ export const api = {
   async requestDownload(
     source: { kind: CollectionKind; id: string },
     opts: { trackIds?: string[]; options?: DownloadRequestOptions } = {},
-  ): Promise<{ requestId: number | null; queued: number }> {
+  ): Promise<{ requestId: number | null; queued: number; mirrored?: number }> {
     const res = await fetchWithTimeout(
       `${API_BASE}/requests`,
       {
@@ -586,6 +586,15 @@ export const api = {
   fileDownloadUrl(name: string, folder?: string | null): string {
     const params = new URLSearchParams({ name, ...(folder ? { folder } : {}) });
     return `${API_BASE}/downloads/file?${params.toString()}`;
+  },
+
+  /**
+   * Link every already-downloaded song of a collection into its folder (creating it), so the
+   * folder's .zip is complete even for songs that were downloaded under another collection.
+   */
+  async fillFolder(kind: CollectionKind, id: string): Promise<{ folder: string; folderExists: boolean; linked: number }> {
+    const res = await fetchWithTimeout(`${API_BASE}/collections/${kind}/${encodeURIComponent(id)}/folder`, { method: "POST" }, 60000);
+    return handleResponse(res, "Could not prepare the folder");
   },
 
   /** Direct link that streams a whole playlist folder as a .zip. */

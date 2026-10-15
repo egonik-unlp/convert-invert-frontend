@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ArrowDown } from "lucide-react";
+import { toast } from "sonner";
 import type { CollectionKind, CollectionTrack } from "@/lib/api-client";
 import { data } from "@/lib/data";
 import { rememberLastCollection } from "@/lib/data/added";
@@ -46,6 +47,22 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
   const [tab, setTab] = useState<Tab>("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  const [zipping, setZipping] = useState(false);
+  const downloadZip = useCallback(async () => {
+    setZipping(true);
+    try {
+      const filled = await data.fillFolder(kind, id);
+      const link = document.createElement("a");
+      link.href = data.folderZipUrl(filled.folder);
+      link.download = "";
+      link.click();
+    } catch (err) {
+      console.warn("Could not prepare the .zip", err);
+      toast.error(t.common.somethingFailed);
+    } finally {
+      setZipping(false);
+    }
+  }, [kind, id, t]);
   const [retries, setRetries] = useState(() => {
     try {
       return localStorage.getItem(`${RETRIES_KEY}:${kind}:${id}`) === "1";
@@ -163,7 +180,9 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
     );
   }
 
-  const zipReady = !!folder?.exists && counts.owned > 0;
+  // The folder may not exist yet (nothing requested under this collection) even though songs of it
+  // are downloaded elsewhere; downloadZip fills it first.
+  const zipReady = !!folder && counts.owned > 0;
   const total = Math.max(1, counts.total);
   const tabs: Tab[] = ["all", "owned", "missing", "failed", "uncertain"];
 
@@ -200,10 +219,9 @@ export function CollectionView({ kind, id }: { kind: CollectionKind; id: string 
         <div className="flex flex-wrap items-center gap-2 px-4 pb-3 md:px-7">
           {action}
           {zipReady ? (
-            <Button variant="outline" asChild title={t.collection.zipHint}>
-              <a href={data.folderZipUrl(folder!.name)} download>
-                {t.collection.zip}
-              </a>
+            <Button variant="outline" title={t.collection.zipHint} onClick={() => void downloadZip()} disabled={zipping}>
+              {zipping ? <Spinner /> : null}
+              {t.collection.zip}
             </Button>
           ) : (
             <Button variant="outline" disabled title={t.collection.zipNone}>

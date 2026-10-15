@@ -24,6 +24,7 @@ export type DataSource = Pick<
   | "getDownloads"
   | "fileDownloadUrl"
   | "folderZipUrl"
+  | "fillFolder"
   | "listUsers"
   | "inviteUser"
   | "updateUser"
